@@ -13,7 +13,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json());
+
+// IMPORTANTE: NO usar express.json() aquí. Los webhooks de Shopify requieren body RAW
+// para HMAC y para evitar "Unexpected token 'n', 'null' is not valid JSON".
+// express.json() se aplica DESPUÉS de las rutas de Shopify (ver más abajo).
 
 const shopify = new ShopifyAPI();
 const meli = new MercadoLibreAPI();
@@ -79,56 +82,147 @@ function calculateMeliStock(shopifyStock) {
 }
 
 /**
- * Endpoint para recibir webhooks de Shopify
- * Configura este endpoint en Shopify: Admin → Settings → Notifications → Webhooks
- * Evento: Inventory levels update
- * URL: https://tu-servidor.com/webhook/inventory
+ * Parsea body RAW (Buffer) a JSON de forma segura.
+ * Evita "Unexpected token 'n', 'null' is not valid JSON" cuando body vacío o inválido.
  */
-// Endpoint genérico para recibir webhooks de Shopify (maneja múltiples tipos)
-app.post('/webhook/inventory', async (req, res) => {
+function parseRawBodySafe(rawBody) {
+  if (!rawBody || !Buffer.isBuffer(rawBody)) {
+    return null;
+  }
+  const str = rawBody.toString('utf8').trim();
+  if (!str || str === 'null') {
+    return null;
+  }
   try {
-    console.log('\n🔔 ========== WEBHOOK SHOPIFY RECIBIDO ==========');
-    console.log('📥 Body completo:', JSON.stringify(req.body, null, 2));
-    
-    // Si el webhook tiene un "topic" diferente, manejarlo
-    if (req.body.topic) {
-      const topic = req.body.topic;
-      console.log(`📌 Topic del webhook: ${topic}`);
-      
-      // Ignorar webhooks que no son de inventory levels update
-      if (topic !== 'inventory_levels/update' && topic !== 'inventory_levels/connect' && topic !== 'inventory_levels/disconnect') {
-        console.log(`⚠️  Topic "${topic}" no es de inventory levels, ignorando`);
-        return res.status(200).json({ message: `Topic ${topic} no procesado` });
-      }
+    return JSON.parse(str);
+  } catch (e) {
+    return null;
+  }
+}
+
+// ========== WEBHOOKS SHOPIFY (body RAW) ==========
+// Shopify requiere body RAW. Usar express.raw() SOLO para estas rutas.
+// express.json() se aplica DESPUÉS (para MercadoLibre y demás).
+
+const shopifyRawParser = express.raw({ type: 'application/json', limit: '1mb' });
+
+/**
+ * POST /webhooks/shopify/orders/create
+ * Webhook orders/create de Shopify. URL exacta usada en producción (Render).
+ * Body RAW: NO express.json (rompe HMAC y genera "null is not valid JSON").
+ */
+app.post('/webhooks/shopify/orders/create', shopifyRawParser, async (req, res) => {
+  try {
+    console.log('\n🔥 WEBHOOK SHOPIFY RECIBIDO → /webhooks/shopify/orders/create');
+    const body = parseRawBodySafe(req.body);
+    if (!body) {
+      console.log('❌ Body vacío o JSON inválido');
+      return res.status(400).json({ error: 'Body vacío o JSON inválido' });
     }
-    
-    // ========== PROTECCIÓN CONTRA LOOPS ==========
-    // Si estamos sincronizando desde MercadoLibre, ignorar este webhook
+    console.log('📥 Order ID:', body.id || body.order_number || 'N/A');
+    if (body.line_items && body.line_items.length) {
+      console.log(`📦 Line items: ${body.line_items.length}`);
+    }
+
     if (isSyncingFromMeli) {
-      console.log('🛡️  Webhook de Shopify ignorado (sincronización activa desde MercadoLibre)');
+      console.log('🛡️  Ignorado (sincronización activa desde MercadoLibre)');
       return res.status(200).json({ message: 'Ignorado: sincronización desde MercadoLibre en curso' });
     }
 
-    const { inventory_item_id, location_id, available } = req.body;
-
-    if (!inventory_item_id) {
-      console.log('❌ Error: inventory_item_id es requerido');
-      return res.status(400).json({ error: 'inventory_item_id es requerido' });
+    const lineItems = body.line_items || [];
+    if (lineItems.length === 0) {
+      console.log('⚠️  Orden sin line_items');
+      return res.status(200).json({ message: 'Orden sin items', order_id: body.id });
     }
 
-    console.log(`📦 Webhook recibido: inventory_item_id=${inventory_item_id}, available=${available}, location_id=${location_id}`);
+    const skusToSync = new Set();
+    for (const item of lineItems) {
+      const sku = item.sku ? String(item.sku).trim() : null;
+      if (sku) skusToSync.add(sku);
+      else if (item.variant_id) console.log(`   ⚠️  Line item sin SKU (variant_id: ${item.variant_id})`);
+    }
 
-    // Obtener el SKU desde el inventory_item_id
-    // Necesitamos buscar el variant que tiene este inventory_item_id
+    let synced = 0;
+    let failed = 0;
+    for (const sku of skusToSync) {
+      const shopifyStock = await shopify.getStockBySKU(sku);
+      if (shopifyStock === null) {
+        console.log(`   ⚠️  SKU ${sku}: no encontrado en Shopify`);
+        failed++;
+        continue;
+      }
+      const meliStock = calculateMeliStock(shopifyStock);
+      const result = await meli.findItemBySKU(sku);
+      if (!result) {
+        console.log(`   ⚠️  SKU ${sku}: no encontrado en MercadoLibre`);
+        failed++;
+        continue;
+      }
+      const ok = await meli.updateStock(result.itemId, meliStock, result.variationId);
+      if (ok) {
+        console.log(`   ✅ ${sku} → MercadoLibre(${meliStock})`);
+        synced++;
+      } else {
+        console.log(`   ❌ ${sku}: error actualizando ML`);
+        failed++;
+      }
+    }
+
+    console.log(`📊 orders/create: ${synced} SKUs sincronizados, ${failed} fallidos`);
+    console.log('🔥 WEBHOOK SHOPIFY orders/create PROCESADO\n');
+    return res.status(200).json({
+      success: failed === 0,
+      order_id: body.id,
+      skus_synced: synced,
+      skus_failed: failed,
+      total_line_items: lineItems.length
+    });
+  } catch (error) {
+    console.error('❌ Error webhook orders/create:', error.message);
+    console.error(error.stack);
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /webhook/inventory
+ * Evento: Inventory levels update. También usa body RAW.
+ */
+app.post('/webhook/inventory', shopifyRawParser, async (req, res) => {
+  try {
+    console.log('\n🔥 WEBHOOK SHOPIFY RECIBIDO → /webhook/inventory');
+    const body = parseRawBodySafe(req.body);
+    if (!body) {
+      console.log('❌ Body vacío o JSON inválido');
+      return res.status(400).json({ error: 'Body vacío o JSON inválido' });
+    }
+    console.log('📥 Body (resumen):', JSON.stringify({ topic: body.topic, inventory_item_id: body.inventory_item_id, available: body.available }, null, 2));
+
+    if (body.topic && body.topic !== 'inventory_levels/update' && body.topic !== 'inventory_levels/connect' && body.topic !== 'inventory_levels/disconnect') {
+      console.log(`⚠️  Topic "${body.topic}" no es inventory, ignorando`);
+      return res.status(200).json({ message: `Topic ${body.topic} no procesado` });
+    }
+
+    if (isSyncingFromMeli) {
+      console.log('🛡️  Ignorado (sincronización activa desde MercadoLibre)');
+      return res.status(200).json({ message: 'Ignorado: sincronización desde MercadoLibre en curso' });
+    }
+
+    const { inventory_item_id, location_id, available } = body;
+    if (!inventory_item_id) {
+      console.log('❌ inventory_item_id es requerido');
+      return res.status(400).json({ error: 'inventory_item_id es requerido' });
+    }
+    console.log(`📦 inventory_item_id=${inventory_item_id}, available=${available}, location_id=${location_id}`);
+
     console.log('🔍 Buscando SKU desde inventory_item_id...');
     const products = await shopify.getAllProducts();
     let sku = null;
-
     for (const product of products) {
       for (const variant of product.variants || []) {
         if (variant.inventory_item_id === inventory_item_id && variant.sku) {
           sku = variant.sku;
-          console.log(`   ✅ SKU encontrado: ${sku} (Producto: ${product.title}, Variante: ${variant.title})`);
+          console.log(`   ✅ SKU: ${sku} (${product.title}, ${variant.title})`);
           break;
         }
       }
@@ -136,60 +230,44 @@ app.post('/webhook/inventory', async (req, res) => {
     }
 
     if (!sku) {
-      console.log(`⚠️  No se encontró SKU para inventory_item_id ${inventory_item_id}`);
+      console.log(`⚠️  No SKU para inventory_item_id ${inventory_item_id}`);
       return res.status(200).json({ message: 'SKU no encontrado' });
     }
 
-    // Obtener el stock total actualizado de Shopify
-    console.log(`📊 Obteniendo stock actual de Shopify para SKU: ${sku}...`);
     const shopifyStock = await shopify.getStockBySKU(sku);
     if (shopifyStock === null) {
       console.log(`❌ Stock no encontrado en Shopify para SKU: ${sku}`);
       return res.status(200).json({ message: 'Stock no encontrado en Shopify' });
     }
+    console.log(`   ✅ Stock Shopify: ${shopifyStock}`);
 
-    console.log(`   ✅ Stock en Shopify: ${shopifyStock}`);
-
-    // Calcular stock para MercadoLibre
     const meliStock = calculateMeliStock(shopifyStock);
-    console.log(`   🧮 Stock calculado para MercadoLibre: ${meliStock} (Shopify ${shopifyStock} - offset ${stockOffset})`);
+    console.log(`   🧮 MercadoLibre: ${meliStock} (offset ${stockOffset})`);
 
-    // Buscar y actualizar en MercadoLibre
-    console.log(`🔍 Buscando SKU ${sku} en MercadoLibre...`);
     const result = await meli.findItemBySKU(sku);
     if (!result) {
       console.log(`⚠️  SKU ${sku} no encontrado en MercadoLibre`);
-      console.log(`💡 Tip: Verifica que el SKU esté configurado en seller_custom_field de la variación`);
       return res.status(200).json({ message: 'Item no encontrado en MercadoLibre' });
     }
 
-    const { itemId, variationId } = result;
-    console.log(`   ✅ Item encontrado: itemId=${itemId}, variationId=${variationId}`);
-    
-    console.log(`🔄 Actualizando stock en MercadoLibre...`);
-    const updated = await meli.updateStock(itemId, meliStock, variationId);
+    const updated = await meli.updateStock(result.itemId, meliStock, result.variationId);
     if (updated) {
-      console.log(`✅ Stock sincronizado exitosamente: ${sku} → MercadoLibre(${meliStock})`);
-      console.log('🔔 ========== WEBHOOK PROCESADO CORRECTAMENTE ==========\n');
-      return res.status(200).json({ 
-        success: true, 
-        sku, 
-        shopifyStock, 
-        meliStock 
-      });
-    } else {
-      console.log(`❌ Error actualizando stock en MercadoLibre para ${sku}`);
-      console.log('🔔 ========== ERROR EN ACTUALIZACIÓN ==========\n');
-      return res.status(500).json({ error: 'Error actualizando stock en MercadoLibre' });
+      console.log(`✅ Sincronizado: ${sku} → MercadoLibre(${meliStock})`);
+      console.log('🔥 WEBHOOK SHOPIFY inventory PROCESADO\n');
+      return res.status(200).json({ success: true, sku, shopifyStock, meliStock });
     }
-
+    console.log(`❌ Error actualizando ML para ${sku}`);
+    console.log('🔥 WEBHOOK SHOPIFY inventory ERROR\n');
+    return res.status(500).json({ error: 'Error actualizando stock en MercadoLibre' });
   } catch (error) {
-    console.error('❌ Error procesando webhook:', error.message);
-    console.error('Stack:', error.stack);
-    console.log('🔔 ========== ERROR EN WEBHOOK ==========\n');
+    console.error('❌ Error webhook inventory:', error.message);
+    console.error(error.stack);
     return res.status(500).json({ error: error.message });
   }
 });
+
+// ========== JSON para el resto de rutas (MercadoLibre, etc.) ==========
+app.use(express.json());
 
 /**
  * Endpoint para recibir webhooks de MercadoLibre
@@ -502,10 +580,11 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, async () => {
   console.log(`🚀 Servidor de webhooks iniciado en puerto ${PORT}`);
-  console.log(`📡 Endpoint webhook Shopify: http://localhost:${PORT}/webhook/inventory`);
-  console.log(`📡 Endpoint webhook MercadoLibre: http://localhost:${PORT}/webhooks/mercadolibre/order`);
-  console.log(`💚 Health check: http://localhost:${PORT}/health`);
-  console.log(`🧪 Test sync: http://localhost:${PORT}/test-sync?sku=B-M-CRU`);
+  console.log(`📡 Shopify orders/create: http://localhost:${PORT}/webhooks/shopify/orders/create`);
+  console.log(`📡 Shopify inventory:      http://localhost:${PORT}/webhook/inventory`);
+  console.log(`📡 MercadoLibre order:      http://localhost:${PORT}/webhooks/mercadolibre/order`);
+  console.log(`💚 Health:                  http://localhost:${PORT}/health`);
+  console.log(`🧪 Test sync:               http://localhost:${PORT}/test-sync?sku=B-M-CRU`);
   console.log(`\n🔍 Verificando órdenes pendientes de MercadoLibre...`);
   
   // Verificar órdenes pendientes al iniciar (solo una vez, en background)
