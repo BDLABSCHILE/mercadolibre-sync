@@ -1,0 +1,262 @@
+import MercadoLibreAPI from './mercadolibre-api.js';
+import ShopifyAPI from './shopify-api.js';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+dotenv.config();
+
+// Obtener el directorio actual para ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const PROCESSED_ORDERS_FILE = path.join(__dirname, '.meli-processed-orders.json');
+const MELI_USER_ID = process.env.MELI_USER_ID;
+
+/**
+ * Carga las órdenes ya procesadas
+ */
+function loadProcessedOrders() {
+  const processedOrders = new Set();
+  try {
+    if (fs.existsSync(PROCESSED_ORDERS_FILE)) {
+      const data = fs.readFileSync(PROCESSED_ORDERS_FILE, 'utf8');
+      const orders = JSON.parse(data);
+      if (Array.isArray(orders)) {
+        orders.forEach(orderId => processedOrders.add(orderId));
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️  No se pudo cargar órdenes procesadas:', error.message);
+  }
+  return processedOrders;
+}
+
+/**
+ * Procesa una orden de MercadoLibre (misma lógica que el webhook)
+ */
+async function processOrder(orderId, shopify, meli, processedOrders) {
+  try {
+    console.log(`\n🛒 Procesando orden ${orderId}...`);
+
+    // Obtener la orden completa
+    const orderResponse = await meli.client.get(`/orders/${orderId}`);
+    const order = orderResponse.data;
+
+    if (!order) {
+      console.error(`   ❌ No se pudo obtener orden ${orderId}`);
+      return false;
+    }
+
+    // Solo procesar órdenes en estados válidos
+    const validStatuses = ['confirmed', 'payment_required', 'payment_in_process', 'paid'];
+    if (!validStatuses.includes(order.status)) {
+      console.log(`   ⏭️  Orden ${orderId} en estado "${order.status}", no procesada aún`);
+      return false;
+    }
+
+    console.log(`   Estado: ${order.status}`);
+    console.log(`   Total: ${order.total_amount} ${order.currency_id}`);
+
+    let itemsProcessed = 0;
+    let itemsFailed = 0;
+
+    if (!order.order_items || order.order_items.length === 0) {
+      console.log(`   ⚠️  Orden ${orderId} no tiene items`);
+      return false;
+    }
+
+    console.log(`   Items en la orden: ${order.order_items.length}\n`);
+
+    for (const orderItem of order.order_items) {
+      const { item: { id: itemId }, quantity, variation_id } = orderItem;
+
+      try {
+        console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id || 'N/A'}, cantidad: ${quantity})`);
+
+        // Resolver SKU desde la variación o el item
+        let sku = null;
+        
+        if (variation_id) {
+          const variationResponse = await meli.client.get(`/items/${itemId}/variations/${variation_id}`);
+          const variation = variationResponse.data;
+          sku = variation.seller_custom_field;
+          
+          if (!sku) {
+            const attrComb = variation.attribute_combinations?.find(
+              a => a.id === 'SELLER_SKU' || a.name?.toLowerCase().includes('sku')
+            );
+            if (attrComb) {
+              sku = attrComb.value_name;
+            }
+          }
+        } else {
+          const itemResponse = await meli.client.get(`/items/${itemId}`);
+          const item = itemResponse.data;
+          sku = item.seller_sku || item.seller_custom_field;
+        }
+
+        if (!sku || sku.trim() === '') {
+          console.log(`      ⚠️  SKU no encontrado para item ${itemId}`);
+          itemsFailed++;
+          continue;
+        }
+
+        console.log(`      ✅ SKU resuelto: ${sku}`);
+
+        // Descontar stock en Shopify
+        const updated = await shopify.updateStockBySKU(sku, quantity);
+        
+        if (updated) {
+          const currentStock = await shopify.getStockBySKU(sku);
+          console.log(`      ✅ Stock actualizado en Shopify: ${sku} (cantidad descontada: ${quantity}, stock actual: ${currentStock})`);
+          itemsProcessed++;
+        } else {
+          console.log(`      ❌ Error actualizando stock para SKU ${sku}`);
+          itemsFailed++;
+        }
+
+      } catch (error) {
+        console.error(`      ❌ Error procesando item ${itemId}:`, error.response?.data || error.message);
+        itemsFailed++;
+      }
+    }
+
+    // SOLO marcar orden como procesada si TODOS los items se procesaron correctamente
+    const totalItems = order.order_items.length;
+    if (itemsFailed === 0 && itemsProcessed === totalItems) {
+      processedOrders.add(orderId);
+      const orders = Array.from(processedOrders);
+      fs.writeFileSync(PROCESSED_ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8');
+      console.log(`\n✅ Orden ${orderId} procesada completamente (${itemsProcessed}/${totalItems} items)`);
+      return true;
+    } else {
+      console.log(`\n⚠️  Orden ${orderId} procesada PARCIALMENTE:`);
+      console.log(`   ✅ Items exitosos: ${itemsProcessed}`);
+      console.log(`   ❌ Items fallidos: ${itemsFailed}`);
+      console.log(`   📦 Total items: ${totalItems}`);
+      console.log(`   ⚠️  NO se marca como procesada para permitir reintento`);
+      // NO marcar como procesada - permitirá reintento en próxima ejecución
+      return false;
+    }
+  } catch (error) {
+    console.error(`❌ Error procesando orden ${orderId}:`, error.response?.data || error.message);
+    return false;
+  }
+}
+
+/**
+ * Busca y procesa órdenes pendientes de MercadoLibre
+ */
+async function checkPendingOrders() {
+  try {
+    console.log('🔍 Buscando órdenes pendientes de MercadoLibre...\n');
+
+    const meli = new MercadoLibreAPI();
+    const shopify = new ShopifyAPI();
+    const processedOrders = loadProcessedOrders();
+
+    console.log(`📋 Órdenes ya procesadas: ${processedOrders.size}`);
+
+    // Buscar órdenes recientes del vendedor
+    // La API de MercadoLibre permite buscar órdenes por seller
+    console.log(`📅 Buscando órdenes recientes del vendedor...\n`);
+
+    // Buscar órdenes del usuario con paginación para asegurar que obtenemos TODAS
+    let allOrders = [];
+    let offset = 0;
+    const limit = 50;
+    let hasMore = true;
+
+    console.log(`📅 Buscando TODAS las órdenes recientes (con paginación)...\n`);
+
+    while (hasMore) {
+      const response = await meli.client.get(`/orders/search`, {
+        params: {
+          seller: MELI_USER_ID,
+          sort: 'date_desc', // Ordenar por fecha descendente (más recientes primero)
+          limit: limit,
+          offset: offset
+        }
+      });
+
+      const orders = response.data.results || [];
+      allOrders.push(...orders);
+      
+      console.log(`   📦 Página ${Math.floor(offset / limit) + 1}: ${orders.length} órdenes encontradas`);
+
+      // Si obtenemos menos órdenes que el límite, no hay más páginas
+      if (orders.length < limit) {
+        hasMore = false;
+      } else {
+        offset += limit;
+        // Pequeño delay para no saturar la API
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    console.log(`\n📦 Total órdenes encontradas: ${allOrders.length}\n`);
+
+    if (allOrders.length === 0) {
+      console.log('✅ No hay órdenes pendientes\n');
+      return;
+    }
+
+    const orders = allOrders;
+
+    let processedCount = 0;
+    let skippedCount = 0;
+    let partialCount = 0; // Órdenes procesadas parcialmente
+    let errorCount = 0;
+
+    for (const orderId of orders) {
+      const orderIdStr = orderId.toString();
+      
+      if (processedOrders.has(orderIdStr)) {
+        skippedCount++;
+        continue;
+      }
+
+      const success = await processOrder(orderIdStr, shopify, meli, processedOrders);
+      if (success) {
+        processedCount++;
+      } else {
+        // Verificar si se procesó parcialmente (algunos items exitosos)
+        // Si la función retorna false, puede ser porque falló completamente o parcialmente
+        // Revisar logs para determinar
+        partialCount++;
+      }
+
+      // Pequeño delay para no saturar la API
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    console.log('\n' + '='.repeat(60));
+    console.log('📊 RESUMEN DE ÓRDENES PENDIENTES');
+    console.log('='.repeat(60));
+    console.log(`   ✅ Procesadas completamente: ${processedCount}`);
+    console.log(`   ⚠️  Procesadas parcialmente (requieren revisión): ${partialCount}`);
+    console.log(`   ⏭️  Ya procesadas (saltadas): ${skippedCount}`);
+    console.log(`   📦 Total revisadas: ${orders.length}`);
+    
+    if (partialCount > 0) {
+      console.log(`\n⚠️  ATENCIÓN: ${partialCount} órdenes se procesaron parcialmente.`);
+      console.log(`   Estas órdenes NO se marcaron como procesadas y se reintentarán en la próxima ejecución.`);
+      console.log(`   Revisa los logs arriba para ver qué items fallaron.`);
+    }
+    
+    console.log('');
+
+  } catch (error) {
+    console.error('❌ Error buscando órdenes pendientes:', error.response?.data || error.message);
+    console.error('Stack:', error.stack);
+  }
+}
+
+// Ejecutar si se llama directamente
+if (import.meta.url === `file://${process.argv[1]}`) {
+  checkPendingOrders();
+}
+
+export default checkPendingOrders;

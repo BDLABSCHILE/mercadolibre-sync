@@ -1,0 +1,1971 @@
+🔍 Obteniendo variaciones de MercadoLibre...
+
+📦 Total de items a consultar: 9
+
+================================================================================
+📋 Cargados 11 items ya refrescados previamente
+
+📋 ITEM_ID: MLC3535073664
+--------------------------------------------------------------------------------
+🔄 Refrescando access token de MercadoLibre...
+✅ Token de acceso refrescado exitosamente
+Título: Cartera Zarga Valiz - 100% Cuero
+Variaciones: 8
+
+Variación 1:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907244,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907246,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907248,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2727100",
+      "value_name": "Camel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907250,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2943523",
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907252,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907254,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2934734",
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907256,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Mocha Mousse"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3535073664",
+  "variation_id": 189654907258,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539375298
+--------------------------------------------------------------------------------
+Título: Porta Pasaporte Valiz - 100% Cuero
+Variaciones: 5
+
+Variación 1:
+{
+  "item_id": "MLC3539375298",
+  "variation_id": 196203833777,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2943523",
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539375298",
+  "variation_id": 196203833779,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Crudo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539375298",
+  "variation_id": 196203833781,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539375298",
+  "variation_id": 196203833783,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539375298",
+  "variation_id": 196203833785,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539387920
+--------------------------------------------------------------------------------
+Título: Banano Midi Valiz - 100% Cuero
+Variaciones: 13
+
+Variación 1:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736598,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736600,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2727100",
+      "value_name": "Camel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736602,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2943523",
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736604,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Charol"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736606,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "3358943",
+      "value_name": "Crudo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736608,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736610,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "127437",
+      "value_name": "Miel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736612,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2934734",
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 9:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736614,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "283158",
+      "value_name": "Verde musgo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 10:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736616,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Mocha Mousse"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 11:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736618,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 12:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736620,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 13:
+{
+  "item_id": "MLC3539387920",
+  "variation_id": 189749736622,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Serpiente Negra"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539608750
+--------------------------------------------------------------------------------
+Título: Mochila Alforja Chica Valiz - 100% Cuero
+Variaciones: 13
+
+Variación 1:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871333,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871335,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2727100",
+      "value_name": "Camel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871337,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2943523",
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871339,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Charol"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871341,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "3358943",
+      "value_name": "Crudo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871343,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871345,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "127437",
+      "value_name": "Miel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871347,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2934734",
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 9:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871349,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "283158",
+      "value_name": "Verde musgo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 10:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871351,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Mocha Mousse"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 11:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871353,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 12:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871355,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 13:
+{
+  "item_id": "MLC3539608750",
+  "variation_id": 196203871357,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "25946348",
+      "value_name": "Serpiente negra"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539440116
+--------------------------------------------------------------------------------
+Título: Tarjetero Valiz - 100% Cuero
+Variaciones: 1
+
+Variación 1:
+{
+  "item_id": "MLC3539440116",
+  "variation_id": 189749808526,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539440132
+--------------------------------------------------------------------------------
+Título: Banano Chico Valiz- 100% Cuero
+Variaciones: 13
+
+Variación 1:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808580,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808582,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Camel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808584,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808586,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Charol"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808588,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Crudo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808590,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808592,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Miel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808594,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 9:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808596,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "283158",
+      "value_name": "Verde musgo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 10:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808598,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Mocha Mousse"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 11:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808600,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 12:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808602,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 13:
+{
+  "item_id": "MLC3539440132",
+  "variation_id": 189749808604,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Serpiente Negra"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539440134
+--------------------------------------------------------------------------------
+Título: Banano Grande Valiz - 100% Cuero
+Variaciones: 13
+
+Variación 1:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808606,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808608,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2727100",
+      "value_name": "Camel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808610,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2943523",
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808612,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Charol"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808614,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "3358943",
+      "value_name": "Crudo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808616,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808618,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "127437",
+      "value_name": "Miel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808620,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "2934734",
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 9:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808622,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "283158",
+      "value_name": "Verde musgo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 10:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808624,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Mocha Mousse"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 11:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808626,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 12:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808628,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 13:
+{
+  "item_id": "MLC3539440134",
+  "variation_id": 189749808630,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Serpiente Negra"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539466112
+--------------------------------------------------------------------------------
+Título: Tabaquera Valiz - 100% Cuero
+Variaciones: 12
+
+Variación 1:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745943,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Camel"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745941,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": "T-M-CAFGA"
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745945,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745947,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Charol"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745949,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Crudo"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745951,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745953,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Miel"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745955,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Moka"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 9:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745957,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "283158",
+      "value_name": "Verde musgo"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 10:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745959,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 11:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745961,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 12:
+{
+  "item_id": "MLC3539466112",
+  "variation_id": 196203745963,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Serpiente Negra"
+    },
+    {
+      "id": "PATTERN_NAME",
+      "name": "Nombre del diseño",
+      "value_id": "930483",
+      "value_name": "Lisa"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+================================================================================
+
+📋 ITEM_ID: MLC3539608746
+--------------------------------------------------------------------------------
+Título: Mochila Chica Valiz - 100% Cuero
+Variaciones: 12
+
+Variación 1:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871279,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Café Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 2:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871281,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Camel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 3:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871283,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Caramelo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 4:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871285,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Charol"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 5:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871287,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Crudo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 6:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871289,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Denim"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 7:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871291,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Miel"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 8:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871293,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Moka"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 9:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871295,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "283158",
+      "value_name": "Verde musgo"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 10:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871297,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": "52049",
+      "value_name": "Negro"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 11:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871299,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Negro Gastado"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+Variación 12:
+{
+  "item_id": "MLC3539608746",
+  "variation_id": 196203871301,
+  "attributes": [
+    {
+      "id": "COLOR",
+      "name": "Color",
+      "value_id": null,
+      "value_name": "Serpiente Negra"
+    },
+    {
+      "id": "FABRIC_DESIGN",
+      "name": "Diseño de la tela",
+      "value_id": "24721100",
+      "value_name": "Liso"
+    }
+  ],
+  "seller_custom_field": null
+}
+
+
+================================================================================
+📊 RESUMEN FINAL
+================================================================================
+Total de items consultados: 9
+Total de variaciones encontradas: 90
+Variaciones con seller_custom_field: 1
+Variaciones sin seller_custom_field: 89
+
+✅ Proceso completado
+
