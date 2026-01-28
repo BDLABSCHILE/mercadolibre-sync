@@ -3,27 +3,22 @@
 // NO usa FS, NO usa Redis, NO tiene efectos colaterales.
 
 class IdempotencyStore {
-  constructor() {
+  constructor(_name) {
     this._store = new Set();
   }
 
-  async has(key) {
-    return this._store.has(key);
+  has(key) {
+    return this._store.has(String(key));
   }
 
-  async add(key) {
-    this._store.add(key);
-    return true;
-  }
-
-  async delete(key) {
-    this._store.delete(key);
+  mark(key) {
+    this._store.add(String(key));
   }
 }
 
 // Factory esperada por webhook-server.js
-export function createIdempotencyStore() {
-  return new IdempotencyStore();
+export function createIdempotencyStore(name) {
+  return new IdempotencyStore(name);
 }
 
 export default IdempotencyStore;
