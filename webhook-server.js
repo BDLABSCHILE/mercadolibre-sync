@@ -1,10 +1,12 @@
 import express from 'express';
 import ShopifyAPI from './shopify-api.js';
 import MercadoLibreAPI from './mercadolibre-api.js';
+import FalabellaAPI from './falabella-api.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createIdempotencyStore } from './idempotency-store.js';
 
 dotenv.config();
 
@@ -20,56 +22,42 @@ const app = express();
 
 const shopify = new ShopifyAPI();
 const meli = new MercadoLibreAPI();
-const stockOffset = parseInt(process.env.STOCK_OFFSET || '1', 10);
+let falabella = null;
 
-// ========== PROTECCIÓN CONTRA LOOPS ==========
-// Flag para evitar que actualizaciones desde MercadoLibre disparen webhooks de Shopify
-let isSyncingFromMeli = false;
+try {
+  // Falabella es opcional: solo inicializar si hay credenciales
+  if (process.env.FALABELLA_USER_ID && process.env.FALABELLA_API_KEY) {
+    falabella = new FalabellaAPI();
+    console.log('✅ FalabellaAPI inicializada');
+  } else {
+    console.log('ℹ️  FalabellaAPI no inicializada (faltan FALABELLA_USER_ID / FALABELLA_API_KEY)');
+  }
+} catch (e) {
+  console.warn('⚠️  No se pudo inicializar FalabellaAPI:', e.message);
+  falabella = null;
+}
+
+const stockOffset = parseInt(process.env.STOCK_OFFSET || '1', 10);
+const stockOffsetFalabella = parseInt(process.env.STOCK_OFFSET_FALABELLA || String(stockOffset), 10);
+
+// ========== PROTECCIÓN CONTRA LOOPS (GENÉRICA) ==========
+// Flags para evitar loops y para evitar que Shopify dispare sync duplicado mientras procesamos una orden externa.
+const isSyncingFromMarketplace = {
+  mercadolibre: false,
+  falabella: false,
+};
+
+function isAnyMarketplaceSyncActive() {
+  return Object.values(isSyncingFromMarketplace).some(Boolean);
+}
 
 // ========== IDEMPOTENCIA ==========
-// Archivo de persistencia para órdenes procesadas
-const PROCESSED_ORDERS_FILE = path.join(__dirname, '.meli-processed-orders.json');
-
-// Set para trackear order_ids ya procesados (con persistencia)
-const processedOrders = new Set();
-
-/**
- * Carga las órdenes ya procesadas desde el archivo de persistencia
- */
-function loadProcessedOrders() {
-  try {
-    if (fs.existsSync(PROCESSED_ORDERS_FILE)) {
-      const data = fs.readFileSync(PROCESSED_ORDERS_FILE, 'utf8');
-      const orders = JSON.parse(data);
-      if (Array.isArray(orders)) {
-        orders.forEach(orderId => processedOrders.add(orderId));
-        console.log(`📋 Cargadas ${processedOrders.size} órdenes ya procesadas previamente`);
-      }
-    }
-  } catch (error) {
-    console.warn('⚠️  No se pudo cargar el archivo de órdenes procesadas, usando cache en memoria:', error.message);
-    processedOrders.clear();
-  }
-}
-
-/**
- * Guarda una orden como procesada en el archivo de persistencia
- */
-function markOrderAsProcessed(orderId) {
-  try {
-    processedOrders.add(orderId);
-    
-    // Guardar en archivo
-    const orders = Array.from(processedOrders);
-    fs.writeFileSync(PROCESSED_ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8');
-  } catch (error) {
-    // Si falla la escritura, al menos mantenerlo en memoria
-    console.warn(`⚠️  No se pudo guardar orden ${orderId} como procesada:`, error.message);
-  }
-}
-
-// Cargar órdenes procesadas al iniciar el servidor
-loadProcessedOrders();
+// Store genérico por marketplace (driver file|memory configurable).
+// OJO: si IDEMPOTENCY_STORE=file en Render multi-instancia o FS efímero, NO garantiza idempotencia global.
+const idempotency = {
+  mercadolibre: createIdempotencyStore('mercadolibre'),
+  falabella: createIdempotencyStore('falabella'),
+};
 
 /**
  * Calcula el stock para MercadoLibre
@@ -79,6 +67,65 @@ function calculateMeliStock(shopifyStock) {
     return 0;
   }
   return Math.max(0, shopifyStock - stockOffset);
+}
+
+/**
+ * Calcula el stock para Falabella
+ */
+function calculateFalabellaStock(shopifyStock) {
+  if (shopifyStock === null || shopifyStock === undefined) {
+    return 0;
+  }
+  return Math.max(0, shopifyStock - stockOffsetFalabella);
+}
+
+/**
+ * Sincroniza un SKU desde Shopify hacia TODOS los marketplaces habilitados.
+ * - Shopify es fuente de verdad.
+ * - Cada marketplace aplica su offset independiente.
+ */
+async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason } = {}) {
+  const safeSku = sku ? String(sku).trim() : '';
+  if (!safeSku) return { sku: safeSku, results: [] };
+
+  const results = [];
+
+  // MercadoLibre
+  try {
+    const meliStock = calculateMeliStock(shopifyStock);
+    const result = await meli.findItemBySKU(safeSku);
+    if (!result) {
+      console.log(`   ⚠️  [sync:${reason || 'shopify'}] SKU ${safeSku}: no encontrado en MercadoLibre`);
+      results.push({ marketplace: 'mercadolibre', ok: false, reason: 'not_found' });
+    } else {
+      const ok = await meli.updateStock(result.itemId, meliStock, result.variationId);
+      if (ok) {
+        console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → MercadoLibre(${meliStock})`);
+        results.push({ marketplace: 'mercadolibre', ok: true, stock: meliStock });
+      } else {
+        console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error actualizando MercadoLibre`);
+        results.push({ marketplace: 'mercadolibre', ok: false, reason: 'update_failed' });
+      }
+    }
+  } catch (e) {
+    console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error MercadoLibre: ${e.message}`);
+    results.push({ marketplace: 'mercadolibre', ok: false, reason: 'error', error: e.message });
+  }
+
+  // Falabella
+  if (falabella) {
+    try {
+      const fStock = calculateFalabellaStock(shopifyStock);
+      const res = await falabella.updateStockBySKU(safeSku, fStock);
+      console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → Falabella(${fStock})`);
+      results.push({ marketplace: 'falabella', ok: true, stock: fStock, raw: res?.rawXml ? '[xml]' : null });
+    } catch (e) {
+      console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error actualizando Falabella: ${e.message}`);
+      results.push({ marketplace: 'falabella', ok: false, reason: 'error', error: e.message });
+    }
+  }
+
+  return { sku: safeSku, results };
 }
 
 /**
@@ -124,9 +171,9 @@ app.post('/webhooks/shopify/orders/create', shopifyRawParser, async (req, res) =
       console.log(`📦 Line items: ${body.line_items.length}`);
     }
 
-    if (isSyncingFromMeli) {
-      console.log('🛡️  Ignorado (sincronización activa desde MercadoLibre)');
-      return res.status(200).json({ message: 'Ignorado: sincronización desde MercadoLibre en curso' });
+    if (isAnyMarketplaceSyncActive()) {
+      console.log('🛡️  Ignorado (sincronización activa desde un marketplace)');
+      return res.status(200).json({ message: 'Ignorado: sincronización desde marketplace en curso' });
     }
 
     const lineItems = body.line_items || [];
@@ -151,21 +198,11 @@ app.post('/webhooks/shopify/orders/create', shopifyRawParser, async (req, res) =
         failed++;
         continue;
       }
-      const meliStock = calculateMeliStock(shopifyStock);
-      const result = await meli.findItemBySKU(sku);
-      if (!result) {
-        console.log(`   ⚠️  SKU ${sku}: no encontrado en MercadoLibre`);
-        failed++;
-        continue;
-      }
-      const ok = await meli.updateStock(result.itemId, meliStock, result.variationId);
-      if (ok) {
-        console.log(`   ✅ ${sku} → MercadoLibre(${meliStock})`);
-        synced++;
-      } else {
-        console.log(`   ❌ ${sku}: error actualizando ML`);
-        failed++;
-      }
+
+      const out = await syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason: 'shopify_orders_create' });
+      const okAll = out.results.every(r => r.ok);
+      if (okAll) synced++;
+      else failed++;
     }
 
     console.log(`📊 orders/create: ${synced} SKUs sincronizados, ${failed} fallidos`);
@@ -203,9 +240,9 @@ app.post('/webhook/inventory', shopifyRawParser, async (req, res) => {
       return res.status(200).json({ message: `Topic ${body.topic} no procesado` });
     }
 
-    if (isSyncingFromMeli) {
-      console.log('🛡️  Ignorado (sincronización activa desde MercadoLibre)');
-      return res.status(200).json({ message: 'Ignorado: sincronización desde MercadoLibre en curso' });
+    if (isAnyMarketplaceSyncActive()) {
+      console.log('🛡️  Ignorado (sincronización activa desde un marketplace)');
+      return res.status(200).json({ message: 'Ignorado: sincronización desde marketplace en curso' });
     }
 
     const { inventory_item_id, location_id, available } = body;
@@ -241,24 +278,20 @@ app.post('/webhook/inventory', shopifyRawParser, async (req, res) => {
     }
     console.log(`   ✅ Stock Shopify: ${shopifyStock}`);
 
-    const meliStock = calculateMeliStock(shopifyStock);
-    console.log(`   🧮 MercadoLibre: ${meliStock} (offset ${stockOffset})`);
-
-    const result = await meli.findItemBySKU(sku);
-    if (!result) {
-      console.log(`⚠️  SKU ${sku} no encontrado en MercadoLibre`);
-      return res.status(200).json({ message: 'Item no encontrado en MercadoLibre' });
+    console.log(`   🧮 MercadoLibre: ${calculateMeliStock(shopifyStock)} (offset ${stockOffset})`);
+    if (falabella) {
+      console.log(`   🧮 Falabella:    ${calculateFalabellaStock(shopifyStock)} (offset ${stockOffsetFalabella})`);
     }
 
-    const updated = await meli.updateStock(result.itemId, meliStock, result.variationId);
-    if (updated) {
-      console.log(`✅ Sincronizado: ${sku} → MercadoLibre(${meliStock})`);
+    const out = await syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason: 'shopify_inventory' });
+    const okAll = out.results.every(r => r.ok);
+    if (okAll) {
       console.log('🔥 WEBHOOK SHOPIFY inventory PROCESADO\n');
-      return res.status(200).json({ success: true, sku, shopifyStock, meliStock });
+      return res.status(200).json({ success: true, sku, shopifyStock, marketplaces: out.results });
     }
-    console.log(`❌ Error actualizando ML para ${sku}`);
+
     console.log('🔥 WEBHOOK SHOPIFY inventory ERROR\n');
-    return res.status(500).json({ error: 'Error actualizando stock en MercadoLibre' });
+    return res.status(500).json({ error: 'Error actualizando stock en uno o más marketplaces', marketplaces: out.results });
   } catch (error) {
     console.error('❌ Error webhook inventory:', error.message);
     console.error(error.stack);
@@ -301,9 +334,9 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     const orderId = orderIdMatch[1];
 
     // ========== IDEMPOTENCIA ==========
-    // Verificar si ya procesamos esta orden
-    if (processedOrders.has(orderId)) {
-      console.log(`⏭️  Orden ${orderId} ya procesada anteriormente, ignorando`);
+    const orderKey = `order:${orderId}`;
+    if (idempotency.mercadolibre.has(orderKey)) {
+      console.log(`⏭️  [mercadolibre] Orden ${orderId} ya procesada anteriormente, ignorando`);
       return res.status(200).json({ message: 'Orden ya procesada', order_id: orderId });
     }
 
@@ -336,7 +369,7 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     console.log(`   Total: ${order.total_amount} ${order.currency_id}`);
 
     // ========== ACTIVAR PROTECCIÓN CONTRA LOOPS ==========
-    isSyncingFromMeli = true;
+    isSyncingFromMarketplace.mercadolibre = true;
 
     try {
       let itemsProcessed = 0;
@@ -356,6 +389,15 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
 
         try {
           console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id || 'N/A'}, cantidad: ${quantity})`);
+
+          // Idempotencia por item (evita doble descuento en retries parciales)
+          const itemKey = `order:${orderId}:item:${itemId}:${variation_id || 'NA'}`;
+          if (idempotency.mercadolibre.has(itemKey)) {
+            console.log(`      ⏭️  Item ya procesado previamente: ${itemKey}`);
+            itemsProcessed++;
+            results.push({ itemId, variationId: variation_id, status: 'skipped_already_processed' });
+            continue;
+          }
 
           // Resolver SKU desde la variación o el item
           let sku = null;
@@ -395,6 +437,7 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
           const updated = await shopify.updateStockBySKU(sku, quantity);
           
           if (updated) {
+            idempotency.mercadolibre.mark(itemKey);
             const currentStock = await shopify.getStockBySKU(sku);
             console.log(`      ✅ Stock actualizado en Shopify: ${sku} (cantidad descontada: ${quantity}, stock actual: ${currentStock})`);
             itemsProcessed++;
@@ -428,7 +471,7 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
       // SOLO marcar como procesada si TODOS los items se procesaron correctamente
       // Si hay items fallidos, NO marcar como procesada para poder reintentar
       if (itemsFailed === 0 && itemsProcessed === order.order_items.length) {
-        markOrderAsProcessed(orderId);
+        idempotency.mercadolibre.mark(orderKey);
         console.log(`\n✅ Orden ${orderId} procesada completamente (${itemsProcessed}/${order.order_items.length} items)`);
       } else {
         console.log(`\n⚠️  Orden ${orderId} procesada PARCIALMENTE:`);
@@ -445,6 +488,18 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
       console.log(`   ❌ Items con errores: ${itemsFailed}`);
       console.log(`   📦 Total items: ${order.order_items.length}`);
 
+      // Redistribuir stock actualizado a todos los marketplaces desde Shopify (fuente de verdad)
+      // Importante: NO confiar en webhooks Shopify durante el procesamiento (están bloqueados por isSyncingFromMarketplace)
+      const uniqueSkus = Array.from(new Set(results.map(r => r.sku).filter(Boolean)));
+      if (uniqueSkus.length > 0) {
+        console.log(`\n🔁 Redistribuyendo stock desde Shopify para ${uniqueSkus.length} SKU(s)...`);
+        for (const sku of uniqueSkus) {
+          const s = await shopify.getStockBySKU(sku);
+          if (s === null) continue;
+          await syncSkuToMarketplacesFromShopify(sku, s, { reason: 'redistribute_after_mercadolibre_sale' });
+        }
+      }
+
       // Retornar 200 incluso si hay errores parciales (para que MercadoLibre no reintente infinitamente)
       // Pero loguear claramente el estado
       return res.status(200).json({
@@ -460,12 +515,12 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
 
     } finally {
       // ========== DESACTIVAR PROTECCIÓN CONTRA LOOPS ==========
-      isSyncingFromMeli = false;
+      isSyncingFromMarketplace.mercadolibre = false;
     }
 
   } catch (error) {
     // Asegurar que el flag se desactive incluso en caso de error
-    isSyncingFromMeli = false;
+    isSyncingFromMarketplace.mercadolibre = false;
     
     console.error('❌ Error procesando webhook de MercadoLibre:', error.response?.data || error.message);
     console.error('Stack:', error.stack);
@@ -479,14 +534,53 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
 });
 
 /**
+ * Webhook Falabella → Shopify
+ *
+ * MODO SEGURO DE PRUEBA (por defecto):
+ * - Si ENABLE_FALABELLA !== 'true':
+ *   - NO llama a Falabella
+ *   - NO llama a Shopify
+ *   - NO descuenta stock
+ *   - SOLO loguea headers/body y responde 200 { ok: true, mode: "webhook_test" }
+ *
+ * Cuando se active ENABLE_FALABELLA='true' podremos reactivar la lógica completa
+ * de descuento de stock e integración real.
+ */
+app.post('/webhooks/falabella/order', async (req, res) => {
+  try {
+    console.log('\n🔥 WEBHOOK FALABELLA RECIBIDO');
+    console.log('   Headers:', JSON.stringify(req.headers || {}, null, 2));
+    console.log('   Body:', JSON.stringify(req.body || {}, null, 2));
+
+    const enableFalabella = String(process.env.ENABLE_FALABELLA || 'false').toLowerCase() === 'true';
+
+    // MODO TEST: no tocar stock, no llamar APIs externas.
+    if (!enableFalabella) {
+      console.log('   ℹ️  ENABLE_FALABELLA=false → modo webhook_test (sin efectos colaterales)');
+      return res.status(200).json({ ok: true, mode: 'webhook_test' });
+    }
+
+    // Cuando se active ENABLE_FALABELLA='true', acá reactivaremos la lógica real
+    // de integración (GetOrder + descuento de stock + redistribución).
+    console.log('   ⚠️  ENABLE_FALABELLA=true pero la lógica real aún no está activada en este entorno.');
+    return res.status(200).json({ ok: true, mode: 'webhook_placeholder' });
+  } catch (error) {
+    console.error('❌ Error procesando webhook de Falabella:', error.message);
+    console.error('Stack:', error.stack);
+    return res.status(500).json({ error: error.message, retry: true });
+  }
+});
+
+/**
  * Endpoint de salud para verificar que el servidor está funcionando
  */
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    processed_orders_count: processedOrders.size,
-    is_syncing_from_meli: isSyncingFromMeli
+    idempotency_store: process.env.IDEMPOTENCY_STORE || 'file',
+    is_syncing_from_marketplace: isSyncingFromMarketplace,
+    falabella_enabled: Boolean(falabella)
   });
 });
 
@@ -583,6 +677,7 @@ app.listen(PORT, async () => {
   console.log(`📡 Shopify orders/create: http://localhost:${PORT}/webhooks/shopify/orders/create`);
   console.log(`📡 Shopify inventory:      http://localhost:${PORT}/webhook/inventory`);
   console.log(`📡 MercadoLibre order:      http://localhost:${PORT}/webhooks/mercadolibre/order`);
+  console.log(`📡 Falabella order:         http://localhost:${PORT}/webhooks/falabella/order`);
   console.log(`💚 Health:                  http://localhost:${PORT}/health`);
   console.log(`🧪 Test sync:               http://localhost:${PORT}/test-sync?sku=B-M-CRU`);
   console.log(`\n🔍 Verificando órdenes pendientes de MercadoLibre...`);
