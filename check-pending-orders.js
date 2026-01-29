@@ -1,44 +1,24 @@
 import MercadoLibreAPI from './mercadolibre-api.js';
 import ShopifyAPI from './shopify-api.js';
 import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { createIdempotencyStore } from './idempotency-store.js';
 
 dotenv.config();
 
-// Obtener el directorio actual para ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const PROCESSED_ORDERS_FILE = path.join(__dirname, '.meli-processed-orders.json');
 const MELI_USER_ID = process.env.MELI_USER_ID;
-
-/**
- * Carga las órdenes ya procesadas
- */
-function loadProcessedOrders() {
-  const processedOrders = new Set();
-  try {
-    if (fs.existsSync(PROCESSED_ORDERS_FILE)) {
-      const data = fs.readFileSync(PROCESSED_ORDERS_FILE, 'utf8');
-      const orders = JSON.parse(data);
-      if (Array.isArray(orders)) {
-        orders.forEach(orderId => processedOrders.add(orderId));
-      }
-    }
-  } catch (error) {
-    console.warn('⚠️  No se pudo cargar órdenes procesadas:', error.message);
-  }
-  return processedOrders;
-}
 
 /**
  * Procesa una orden de MercadoLibre (misma lógica que el webhook)
  */
-async function processOrder(orderId, shopify, meli, processedOrders) {
+async function processOrder(orderId, shopify, meli, store) {
   try {
     console.log(`\n🛒 Procesando orden ${orderId}...`);
+
+    const orderKey = `order:${orderId}`;
+    if (store.has(orderKey)) {
+      console.log(`   ⏭️  Orden ${orderId} ya procesada (idempotencia)`);
+      return true;
+    }
 
     // Obtener la orden completa
     const orderResponse = await meli.client.get(`/orders/${orderId}`);
@@ -75,6 +55,13 @@ async function processOrder(orderId, shopify, meli, processedOrders) {
       try {
         console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id || 'N/A'}, cantidad: ${quantity})`);
 
+        const itemKey = `order:${orderId}:item:${itemId}:${variation_id || 'NA'}`;
+        if (store.has(itemKey)) {
+          console.log(`      ⏭️  Item ya procesado previamente: ${itemKey}`);
+          itemsProcessed++;
+          continue;
+        }
+
         // Resolver SKU desde la variación o el item
         let sku = null;
         
@@ -109,6 +96,7 @@ async function processOrder(orderId, shopify, meli, processedOrders) {
         const updated = await shopify.updateStockBySKU(sku, quantity);
         
         if (updated) {
+          store.mark(itemKey);
           const currentStock = await shopify.getStockBySKU(sku);
           console.log(`      ✅ Stock actualizado en Shopify: ${sku} (cantidad descontada: ${quantity}, stock actual: ${currentStock})`);
           itemsProcessed++;
@@ -126,9 +114,7 @@ async function processOrder(orderId, shopify, meli, processedOrders) {
     // SOLO marcar orden como procesada si TODOS los items se procesaron correctamente
     const totalItems = order.order_items.length;
     if (itemsFailed === 0 && itemsProcessed === totalItems) {
-      processedOrders.add(orderId);
-      const orders = Array.from(processedOrders);
-      fs.writeFileSync(PROCESSED_ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8');
+      store.mark(orderKey);
       console.log(`\n✅ Orden ${orderId} procesada completamente (${itemsProcessed}/${totalItems} items)`);
       return true;
     } else {
@@ -155,9 +141,9 @@ async function checkPendingOrders() {
 
     const meli = new MercadoLibreAPI();
     const shopify = new ShopifyAPI();
-    const processedOrders = loadProcessedOrders();
+    const store = createIdempotencyStore('mercadolibre');
 
-    console.log(`📋 Órdenes ya procesadas: ${processedOrders.size}`);
+    console.log(`📋 Store idempotencia cargado (mercadolibre).`);
 
     // Buscar órdenes recientes del vendedor
     // La API de MercadoLibre permite buscar órdenes por seller
@@ -213,12 +199,12 @@ async function checkPendingOrders() {
     for (const orderId of orders) {
       const orderIdStr = orderId.toString();
       
-      if (processedOrders.has(orderIdStr)) {
+      if (store.has(`order:${orderIdStr}`)) {
         skippedCount++;
         continue;
       }
 
-      const success = await processOrder(orderIdStr, shopify, meli, processedOrders);
+      const success = await processOrder(orderIdStr, shopify, meli, store);
       if (success) {
         processedCount++;
       } else {

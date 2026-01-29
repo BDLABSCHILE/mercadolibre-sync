@@ -24,17 +24,22 @@ const shopify = new ShopifyAPI();
 const meli = new MercadoLibreAPI();
 let falabella = null;
 
-try {
-  // Falabella es opcional: solo inicializar si hay credenciales
-  if (process.env.FALABELLA_USER_ID && process.env.FALABELLA_API_KEY) {
-    falabella = new FalabellaAPI();
-    console.log('✅ FalabellaAPI inicializada');
-  } else {
-    console.log('ℹ️  FalabellaAPI no inicializada (faltan FALABELLA_USER_ID / FALABELLA_API_KEY)');
+// Falabella: solo inicializar si ENABLE_FALABELLA=true Y hay credenciales
+const enableFalabella = String(process.env.ENABLE_FALABELLA || 'false').toLowerCase() === 'true';
+if (enableFalabella) {
+  try {
+    if (process.env.FALABELLA_USER_ID && process.env.FALABELLA_API_KEY) {
+      falabella = new FalabellaAPI();
+      console.log('✅ FalabellaAPI inicializada (ENABLE_FALABELLA=true)');
+    } else {
+      console.warn('⚠️  ENABLE_FALABELLA=true pero faltan credenciales (FALABELLA_USER_ID / FALABELLA_API_KEY)');
+    }
+  } catch (e) {
+    console.warn('⚠️  No se pudo inicializar FalabellaAPI:', e.message);
+    falabella = null;
   }
-} catch (e) {
-  console.warn('⚠️  No se pudo inicializar FalabellaAPI:', e.message);
-  falabella = null;
+} else {
+  console.log('ℹ️  FalabellaAPI no inicializada (ENABLE_FALABELLA=false)');
 }
 
 const stockOffset = parseInt(process.env.STOCK_OFFSET || '1', 10);
@@ -112,13 +117,16 @@ async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason } = 
     results.push({ marketplace: 'mercadolibre', ok: false, reason: 'error', error: e.message });
   }
 
-  // Falabella
+  // Falabella (solo si está inicializado, lo cual requiere ENABLE_FALABELLA=true + credenciales)
   if (falabella) {
     try {
       const fStock = calculateFalabellaStock(shopifyStock);
+      console.log(`   🧮 [sync:${reason || 'shopify'}] ${safeSku}: Shopify(${shopifyStock}) → Falabella(${fStock}, offset ${stockOffsetFalabella})`);
+      
       const res = await falabella.updateStockBySKU(safeSku, fStock);
+      
       console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → Falabella(${fStock})`);
-      results.push({ marketplace: 'falabella', ok: true, stock: fStock, raw: res?.rawXml ? '[xml]' : null });
+      results.push({ marketplace: 'falabella', ok: true, stock: fStock, shopifyStock, offset: stockOffsetFalabella });
     } catch (e) {
       console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error actualizando Falabella: ${e.message}`);
       results.push({ marketplace: 'falabella', ok: false, reason: 'error', error: e.message });
@@ -536,21 +544,163 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
 /**
  * Webhook Falabella → Shopify
  *
- * MODO SEGURO DE PRUEBA (por defecto):
- * - Si ENABLE_FALABELLA !== 'true':
- *   - NO llama a Falabella
- *   - NO llama a Shopify
- *   - NO descuenta stock
- *   - SOLO loguea headers/body y responde 200 { ok: true, mode: "webhook_test" }
+ * FASE 1: OBSERVACIÓN DE PAYLOAD FALABELLA (modo seguro)
+ * - ENABLE_FALABELLA=false por defecto
+ * - NO llama a Falabella API
+ * - NO llama a Shopify
+ * - NO descuenta stock
+ * - SOLO observa y loguea el payload real que envía Falabella
  *
- * Cuando se active ENABLE_FALABELLA='true' podremos reactivar la lógica completa
- * de descuento de stock e integración real.
+ * Objetivo: entender la estructura exacta del webhook antes de activar lógica real.
+ * NO activar lógica real todavía.
  */
 app.post('/webhooks/falabella/order', async (req, res) => {
   try {
     console.log('\n🔥 WEBHOOK FALABELLA RECIBIDO');
-    console.log('   Headers:', JSON.stringify(req.headers || {}, null, 2));
-    console.log('   Body:', JSON.stringify(req.body || {}, null, 2));
+    console.log('='.repeat(60));
+
+    // RAW BODY (antes de parsing)
+    const rawBody = req.body;
+    console.log('\n📦 RAW BODY:');
+    console.log(JSON.stringify(rawBody, null, 2));
+
+    // Headers
+    console.log('\n📋 Headers:');
+    console.log(JSON.stringify(req.headers || {}, null, 2));
+
+    // Detectar posibles campos de Order ID
+    const possibleOrderIdFields = ['orderId', 'OrderId', 'order_id', 'Order_ID', 'resource', 'order_number', 'orderNumber', 'id', 'Id'];
+    let detectedOrderId = null;
+    let detectedOrderIdField = null;
+
+    for (const field of possibleOrderIdFields) {
+      if (rawBody && typeof rawBody === 'object' && rawBody[field] !== undefined && rawBody[field] !== null) {
+        detectedOrderId = String(rawBody[field]);
+        detectedOrderIdField = field;
+        break;
+      }
+    }
+
+    if (detectedOrderId) {
+      console.log(`\n✅ PARSED ORDER ID: "${detectedOrderId}" (campo: "${detectedOrderIdField}")`);
+    } else {
+      console.log('\n⚠️  ORDER ID: No detectado en campos comunes');
+      console.log('   Campos disponibles en body:', Object.keys(rawBody || {}));
+    }
+
+    // Detectar posibles arrays de items
+    const possibleItemsFields = ['items', 'Items', 'order_items', 'orderItems', 'products', 'Products', 'line_items', 'lineItems'];
+    let detectedItems = null;
+    let detectedItemsField = null;
+
+    for (const field of possibleItemsFields) {
+      if (rawBody && typeof rawBody === 'object' && Array.isArray(rawBody[field])) {
+        detectedItems = rawBody[field];
+        detectedItemsField = field;
+        break;
+      }
+    }
+
+    if (detectedItems && detectedItems.length > 0) {
+      console.log(`\n📦 RAW ITEMS (campo: "${detectedItemsField}", cantidad: ${detectedItems.length}):`);
+      console.log(JSON.stringify(detectedItems, null, 2));
+    } else {
+      console.log('\n⚠️  ITEMS: No se detectó array de items en campos comunes');
+    }
+
+    // Estructura completa del body (para análisis)
+    console.log('\n🔍 ESTRUCTURA COMPLETA DEL BODY:');
+    console.log(JSON.stringify(rawBody, null, 2));
+
+    // ========== VERIFICACIÓN DE SKUs CONTRA SHOPIFY (SOLO OBSERVACIÓN) ==========
+    // Detectar posibles SKUs en el payload y verificar si existen en Shopify
+    // NO se actualiza stock, NO se hacen cambios, SOLO logs de observación
+    console.log('\n' + '='.repeat(60));
+    console.log('🔍 VERIFICACIÓN DE SKUs FALABELLA vs SHOPIFY (modo observación)');
+    console.log('='.repeat(60));
+
+    const detectedSKUs = new Set();
+
+    // Función helper para extraer SKUs de un objeto/array recursivamente
+    function extractSKUs(obj, path = '') {
+      if (!obj || typeof obj !== 'object') return;
+
+      // Buscar campos comunes de SKU
+      const skuFields = ['sku', 'SKU', 'sellerSku', 'SellerSku', 'seller_sku', 'SellerSKU', 'productSku', 'ProductSku', 'itemSku', 'ItemSku'];
+      
+      for (const field of skuFields) {
+        if (obj[field] !== undefined && obj[field] !== null && String(obj[field]).trim() !== '') {
+          detectedSKUs.add(String(obj[field]).trim());
+        }
+      }
+
+      // Recursión para objetos y arrays
+      if (Array.isArray(obj)) {
+        obj.forEach((item, idx) => extractSKUs(item, `${path}[${idx}]`));
+      } else {
+        for (const [key, value] of Object.entries(obj)) {
+          if (value && typeof value === 'object') {
+            extractSKUs(value, path ? `${path}.${key}` : key);
+          }
+        }
+      }
+    }
+
+    // Extraer SKUs del payload completo
+    extractSKUs(rawBody);
+
+    if (detectedSKUs.size > 0) {
+      console.log(`\n📋 SKUs detectados en payload: ${detectedSKUs.size}`);
+      
+      // Verificar cada SKU contra Shopify
+      for (const sku of detectedSKUs) {
+        try {
+          console.log(`\n   🔍 Verificando SKU: "${sku}"`);
+          
+          // Buscar SKU en productos de Shopify (solo lectura, sin cambios)
+          const products = await shopify.getAllProducts();
+          let found = false;
+          let productInfo = null;
+
+          for (const product of products) {
+            for (const variant of product.variants || []) {
+              const variantSKU = variant.sku ? variant.sku.trim() : '';
+              if (variantSKU.toUpperCase() === sku.toUpperCase()) {
+                found = true;
+                productInfo = {
+                  productTitle: product.title,
+                  variantTitle: variant.title || 'Default',
+                  variantId: variant.id,
+                  inventoryItemId: variant.inventory_item_id
+                };
+                break;
+              }
+            }
+            if (found) break;
+          }
+
+          if (found && productInfo) {
+            console.log(`   🟢 MATCH EN SHOPIFY:`);
+            console.log(`      Producto: "${productInfo.productTitle}"`);
+            console.log(`      Variante: "${productInfo.variantTitle}"`);
+            console.log(`      Variant ID: ${productInfo.variantId}`);
+            console.log(`      Inventory Item ID: ${productInfo.inventoryItemId}`);
+          } else {
+            console.log(`   🔴 NO EXISTE EN SHOPIFY`);
+            console.log(`      SKU "${sku}" no encontrado en ningún producto/variante`);
+          }
+        } catch (error) {
+          console.log(`   ⚠️  Error verificando SKU "${sku}":`, error.message);
+        }
+      }
+    } else {
+      console.log('\n   ⚠️  No se detectaron SKUs en el payload');
+      console.log('   💡 Tip: Los SKUs pueden estar en campos como: sku, sellerSku, seller_sku, etc.');
+    }
+
+    console.log('\n' + '='.repeat(60));
+    console.log('ℹ️  FASE 1: Modo observación - NO se ejecuta lógica real');
+    console.log('='.repeat(60) + '\n');
 
     const enableFalabella = String(process.env.ENABLE_FALABELLA || 'false').toLowerCase() === 'true';
 
