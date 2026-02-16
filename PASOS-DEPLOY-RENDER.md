@@ -110,6 +110,20 @@ Con eso, aunque el job corra al arrancar, no procesará ninguna orden.
 
 ---
 
+## Parte D: Opcional – Idempotencia en archivo (evitar reprocesar la misma orden en cada deploy)
+
+Si ves que la misma orden de MercadoLibre (ej. B-G-MOKA) se procesa otra vez en cada deploy, es porque la idempotencia por defecto es en memoria y se pierde al reiniciar. Para que persista:
+
+1. En Render → **Environment**.
+2. **Key:** `IDEMPOTENCY_STORE`  
+   **Value:** `file`
+3. (Opcional) **Key:** `IDEMPOTENCY_FILE_DIR`  
+   **Value:** deja vacío para usar el directorio de trabajo del servicio.
+
+Así el webhook y el job de órdenes pendientes comparten el mismo archivo (`idempotency-mercadolibre.json`) y las órdenes ya procesadas no se vuelven a tocar tras un reinicio.
+
+---
+
 ## Resumen rápido
 
 | Paso | Dónde        | Qué hacer |

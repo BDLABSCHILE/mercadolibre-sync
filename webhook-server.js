@@ -299,8 +299,15 @@ app.post('/webhook/inventory', shopifyRawParser, async (req, res) => {
       return res.status(200).json({ success: true, sku, shopifyStock, marketplaces: out.results });
     }
 
-    console.log('🔥 WEBHOOK SHOPIFY inventory ERROR\n');
-    return res.status(500).json({ error: 'Error actualizando stock en uno o más marketplaces', marketplaces: out.results });
+    // Siempre 200 para que Shopify NO reintente: SKU no en Meli/Falabella es esperado (no todos los productos están en todos los marketplaces)
+    console.log('🔥 WEBHOOK SHOPIFY inventory: sync parcial (alguno falló, no reintentar)\n');
+    return res.status(200).json({
+      success: false,
+      sku,
+      shopifyStock,
+      marketplaces: out.results,
+      message: 'Uno o más marketplaces no actualizados (ej. SKU no vendido ahí). No se reintenta.'
+    });
   } catch (error) {
     console.error('❌ Error webhook inventory:', error.message);
     console.error(error.stack);

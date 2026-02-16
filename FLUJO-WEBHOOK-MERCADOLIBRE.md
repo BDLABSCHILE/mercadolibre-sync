@@ -82,8 +82,16 @@
 
 ---
 
+## Evitar loops y reintentos infinitos
+
+- **SKU que no está en MercadoLibre (ej. B-G-COBT):** Si una venta en Shopify dispara el webhook de inventario y ese SKU no se vende en Meli, antes devolvíamos 500 y Shopify **reintentaba sin parar**. Ahora el webhook de inventario devuelve **siempre 200** (éxito o “sync parcial”); así Shopify no reintenta. En logs verás algo como “sync parcial” o “no encontrado en MercadoLibre” y no habrá bucle.
+- **Misma orden reprocesada en cada deploy (ej. B-G-MOKA):** La idempotencia por defecto es en memoria, así que en cada reinicio/deploy se pierde y el job puede volver a procesar la misma orden. Para evitarlo, en Render configura **`IDEMPOTENCY_STORE=file`** (y opcionalmente `IDEMPOTENCY_FILE_DIR` si quieres otra carpeta). Así el webhook y el job comparten el mismo archivo y las órdenes ya procesadas no se vuelven a tocar.
+
+---
+
 ## Resumen
 
 - **Quién actualiza Shopify cuando cae una venta en Meli:** solo el **webhook** `POST /webhooks/mercadolibre/order` (cuando Meli lo llama).
 - El job **check-pending-orders** es un respaldo (órdenes recientes que no se procesaron por webhook); con `PENDING_ORDERS_LAST_HOURS=0` no procesa ninguna y no interfiere.
 - Si el webhook está bien configurado en Meli y llega a Render, en los logs verás `🛒 Venta recibida en MercadoLibre`; a partir de ahí los mensajes te dicen si falló el resolver de SKU o la actualización en Shopify.
+- **Idempotencia en archivo:** `IDEMPOTENCY_STORE=file` evita reprocesar la misma orden en cada deploy.
