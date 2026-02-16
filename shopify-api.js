@@ -227,11 +227,11 @@ class ShopifyAPI {
 
       console.log(`📉 Descontando stock: SKU=${sku}, Actual=${currentStock}, Descuento=${quantity}, Nuevo=${newStock}`);
 
-      // Actualizar usando inventory_levels/adjust
+      // Actualizar usando inventory_levels/adjust (Shopify espera available_adjustment)
       const response = await this.client.post('/inventory_levels/adjust.json', {
         location_id: locationId,
         inventory_item_id: inventoryItemId,
-        quantity_adjustment: quantityAdjustment
+        available_adjustment: quantityAdjustment
       });
 
       if (response.status === 200) {
