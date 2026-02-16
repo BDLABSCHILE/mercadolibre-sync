@@ -105,6 +105,16 @@ class MercadoLibreAPI {
           }
         }
 
+        // 429 Too Many Requests: esperar y reintentar (máx 2 veces, backoff ~8s y ~20s)
+        if (error.response?.status === 429 && originalRequest && (originalRequest._retry429Count || 0) < 2) {
+          const count = (originalRequest._retry429Count || 0) + 1;
+          originalRequest._retry429Count = count;
+          const waitMs = count === 1 ? 8000 : 20000;
+          console.warn(`⚠️  MercadoLibre 429 (rate limit). Esperando ${waitMs / 1000}s antes de reintento ${count}/2...`);
+          await new Promise(r => setTimeout(r, waitMs));
+          return this.client(originalRequest);
+        }
+
         return Promise.reject(error);
       }
     );

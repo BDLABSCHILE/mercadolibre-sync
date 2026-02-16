@@ -23,6 +23,23 @@ class ShopifyAPI {
         'Content-Type': 'application/json',
       },
     });
+    this.setup429Retry();
+  }
+
+  /** Reintento con backoff ante 429 (rate limit). */
+  setup429Retry() {
+    this.client.interceptors.response.use(
+      (res) => res,
+      async (err) => {
+        const config = err.config;
+        if (err.response?.status !== 429 || !config || (config._retry429Count || 0) >= 2) return Promise.reject(err);
+        config._retry429Count = (config._retry429Count || 0) + 1;
+        const waitMs = config._retry429Count === 1 ? 8000 : 20000;
+        console.warn(`⚠️  Shopify 429 (rate limit). Esperando ${waitMs / 1000}s antes de reintento ${config._retry429Count}/2...`);
+        await new Promise(r => setTimeout(r, waitMs));
+        return this.client(config);
+      }
+    );
   }
 
   /**

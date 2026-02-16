@@ -95,6 +95,23 @@ export default class FalabellaAPI {
       },
       transformResponse: r => r,
     });
+    this.setup429Retry();
+  }
+
+  /** Reintento con backoff ante 429 (rate limit). */
+  setup429Retry() {
+    this.client.interceptors.response.use(
+      (res) => res,
+      async (err) => {
+        const config = err.config;
+        if (err.response?.status !== 429 || !config || (config._retry429Count || 0) >= 2) return Promise.reject(err);
+        config._retry429Count = (config._retry429Count || 0) + 1;
+        const waitMs = config._retry429Count === 1 ? 8000 : 20000;
+        console.warn(`⚠️  Falabella 429 (rate limit). Esperando ${waitMs / 1000}s antes de reintento ${config._retry429Count}/2...`);
+        await new Promise(r => setTimeout(r, waitMs));
+        return this.client(config);
+      }
+    );
   }
 
   _notEnabled() {
@@ -159,12 +176,30 @@ export default class FalabellaAPI {
     return s.slice(0, 200) + '...';
   }
 
-  async getOrderItems(_orderId) {
-    if (!this.enabled) {
-      return [];
+  /**
+   * Obtiene los items de una orden (GetOrderItems).
+   * @param {string|number} orderId - ID de la orden
+   * @returns {Promise<Array<{sku: string, quantity: number}>>}
+   */
+  async getOrderItems(orderId) {
+    if (!this.enabled) return [];
+    if (!orderId && orderId !== 0) return [];
+
+    const raw = await this.call('GetOrderItems', { OrderId: String(orderId), Format: 'JSON' }, { method: 'GET' });
+    const data = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+    if (!data) return [];
+
+    const items = data.OrderItems?.OrderItem ?? data.OrderItems ?? data.order_items ?? [];
+    const arr = Array.isArray(items) ? items : [items];
+    const result = [];
+    for (let i = 0; i < arr.length; i++) {
+      const it = arr[i];
+      const sku = it.ShopSku ?? it.Sku ?? it.sku ?? it.seller_sku ?? '';
+      const qty = parseInt(it.Quantity ?? it.quantity ?? it.qty ?? '1', 10) || 1;
+      const itemId = it.OrderItemId ?? it.order_item_id ?? `item-${i}`;
+      if (sku && String(sku).trim()) result.push({ sku: String(sku).trim(), quantity: qty, orderItemId: itemId });
     }
-    // TODO: Implementar cuando se active lógica real de órdenes
-    return [];
+    return result;
   }
 
   /**

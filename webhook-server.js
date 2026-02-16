@@ -93,7 +93,7 @@ function calculateFalabellaStock(shopifyStock) {
  * - Shopify es fuente de verdad.
  * - Cada marketplace aplica su offset independiente.
  */
-async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason } = {}) {
+async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason, skipFalabella } = {}) {
   const safeSku = sku ? String(sku).trim() : '';
   if (!safeSku) return { sku: safeSku, results: [] };
 
@@ -121,8 +121,8 @@ async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason } = 
     results.push({ marketplace: 'mercadolibre', ok: false, reason: 'error', error: e.message });
   }
 
-  // Falabella (solo si está inicializado, lo cual requiere ENABLE_FALABELLA=true + credenciales)
-  if (falabella) {
+  // Falabella (solo si está inicializado y no skipFalabella; skip cuando el origen fue venta Falabella para evitar loop)
+  if (falabella && !skipFalabella) {
     if (falabellaAccessDeniedSkus.has(safeSku)) {
       console.log(`   ⏭️  [sync:${reason || 'shopify'}] ${safeSku}: Falabella omitido (E009 anterior para este SKU)`);
       results.push({ marketplace: 'falabella', ok: false, reason: 'access_denied_skipped', skipped: true });
@@ -465,6 +465,98 @@ async function processMercadoLibreOrder(order, orderId, options = {}) {
   };
 }
 
+/**
+ * Procesa una orden de Falabella: obtiene items, descuenta en Shopify, redistribuye solo a Meli (no a Falabella para evitar loop).
+ */
+async function processFalabellaOrder(orderId, options = {}) {
+  const dryRun = Boolean(options.dryRun);
+  const orderKey = `order:${orderId}`;
+
+  if (!falabella) {
+    console.log('⚠️  Falabella no inicializado, no se puede procesar orden');
+    return { success: false, order_id: orderId, items_processed: 0, items_failed: 0 };
+  }
+
+  if (!dryRun && idempotency.falabella.has(orderKey)) {
+    console.log(`⏭️  Orden Falabella ${orderId} ya procesada anteriormente`);
+    return { success: true, order_id: orderId, items_processed: 0, items_failed: 0, skipped: true };
+  }
+
+  let items;
+  try {
+    items = await falabella.getOrderItems(orderId);
+  } catch (e) {
+    console.error(`❌ Error obteniendo items de orden Falabella ${orderId}:`, e.message);
+    return { success: false, order_id: orderId, items_processed: 0, items_failed: 0, error: e.message };
+  }
+
+  if (!items || items.length === 0) {
+    console.log(`⚠️  Orden Falabella ${orderId} sin items o vacía`);
+    return { success: false, order_id: orderId, items_processed: 0, items_failed: 0 };
+  }
+
+  console.log(`   Items en la orden Falabella: ${items.length}\n`);
+  let itemsProcessed = 0;
+  let itemsFailed = 0;
+  const results = [];
+
+  for (const it of items) {
+    const { sku, quantity, orderItemId } = it;
+    const itemKey = `order:${orderId}:item:${orderItemId || sku}-${quantity}`;
+    if (!dryRun && idempotency.falabella.has(itemKey)) {
+      itemsProcessed++;
+      continue;
+    }
+
+    try {
+      console.log(`   📦 Procesando ${sku} (cantidad: ${quantity})`);
+      if (dryRun) {
+        itemsProcessed++;
+        continue;
+      }
+
+      const updated = await shopify.updateStockBySKU(sku, quantity);
+      if (updated) {
+        idempotency.falabella.mark(itemKey);
+        const currentStock = await shopify.getStockBySKU(sku);
+        console.log(`      ✅ Stock actualizado en Shopify: ${sku} (descontado: ${quantity}, stock actual: ${currentStock})`);
+        itemsProcessed++;
+        results.push({ sku, quantity, status: 'success', stockAfter: currentStock });
+      } else {
+        itemsFailed++;
+        results.push({ sku, quantity, status: 'update_failed' });
+      }
+    } catch (e) {
+      console.error(`      ❌ Error procesando ${sku}:`, e.message);
+      itemsFailed++;
+      results.push({ sku, quantity, status: 'error', error: e.message });
+    }
+  }
+
+  if (!dryRun && itemsFailed === 0 && itemsProcessed === items.length) {
+    idempotency.falabella.mark(orderKey);
+  }
+
+  const uniqueSkus = Array.from(new Set(results.map(r => r.sku).filter(Boolean)));
+  if (!dryRun && uniqueSkus.length > 0) {
+    console.log(`\n🔁 Redistribuyendo stock a MercadoLibre (NO a Falabella para evitar loop)...`);
+    for (const sku of uniqueSkus) {
+      const s = await shopify.getStockBySKU(sku);
+      if (s === null) continue;
+      await syncSkuToMarketplacesFromShopify(sku, s, { reason: 'redistribute_after_falabella_sale', skipFalabella: true });
+    }
+  }
+
+  return {
+    success: itemsFailed === 0,
+    order_id: orderId,
+    items_processed: itemsProcessed,
+    items_failed: itemsFailed,
+    total_items: items.length,
+    results
+  };
+}
+
 // ========== TEST INTERNO: orden mockeada (solo validar resolver, sin MercadoLibre) ==========
 const TEST_MOCK_ORDER_CASE_A = {
   id: 'test-order-case-a',
@@ -634,14 +726,30 @@ app.post('/webhooks/falabella/order', async (req, res) => {
       }
     }
 
+    let orderIdForProcess = null;
     if (detectedOrderId) {
       console.log(`\n✅ PARSED ORDER ID: "${detectedOrderId}" (campo: "${detectedOrderIdField}")`);
+      const match = detectedOrderId.match(/\/orders\/(\d+)/) || detectedOrderId.match(/(\d+)/);
+      orderIdForProcess = match ? match[1] : detectedOrderId;
     } else {
       console.log('\n⚠️  ORDER ID: No detectado en campos comunes');
       console.log('   Campos disponibles en body:', Object.keys(rawBody || {}));
     }
 
-    // Detectar posibles arrays de items
+    // Si tenemos orderId y Falabella activo → procesar orden (descontar Shopify, redistribuir solo a Meli)
+    const enableFalabella = String(process.env.ENABLE_FALABELLA || 'false').toLowerCase() === 'true';
+    if (orderIdForProcess && enableFalabella && falabella) {
+      isSyncingFromMarketplace.falabella = true;
+      try {
+        const result = await processFalabellaOrder(orderIdForProcess);
+        console.log(`\n🛒 Orden Falabella ${orderIdForProcess} procesada: ${result.items_processed} items, ${result.items_failed} fallidos`);
+        return res.status(200).json({ ok: true, order_id: orderIdForProcess, ...result });
+      } finally {
+        isSyncingFromMarketplace.falabella = false;
+      }
+    }
+
+    // Detectar posibles arrays de items (modo observación si no se procesó)
     const possibleItemsFields = ['items', 'Items', 'order_items', 'orderItems', 'products', 'Products', 'line_items', 'lineItems'];
     let detectedItems = null;
     let detectedItemsField = null;
@@ -874,32 +982,55 @@ app.get('/test-sync', async (req, res) => {
 });
 
 /**
- * Sincronización general: toma el stock actual de todos los productos en Shopify
+ * Sincronización general: toma el stock actual de (todos o filtrados) productos en Shopify
  * y lo envía a MercadoLibre y Falabella. Protegido por SYNC_ALL_SECRET.
- * Uso: POST o GET /sync-all?key=TU_SECRETO
+ * Uso: GET o POST /sync-all?key=TU_SECRETO
+ * Opcional: ?skus=B-G-MOKA,T-M-CRU,... para sincronizar solo esos SKUs.
+ * Env: SYNC_ALL_SKU_LIST (lista fija) o SYNC_ALL_SKU_PREFIX (ej. B-G-,T-M-) para filtrar sin pasar ?skus=.
  * Responde 202 y ejecuta la sync en segundo plano (revisa los logs).
  */
-app.get('/sync-all', async (req, res) => {
+function handleSyncAll(req, res) {
   const providedKey = req.query.key || req.headers['x-sync-all-key'] || '';
   const secret = process.env.SYNC_ALL_SECRET || '';
   if (!secret || providedKey !== secret) {
     return res.status(403).json({ error: 'Acceso denegado. Configura SYNC_ALL_SECRET y usa ?key=... o header X-Sync-All-Key.' });
   }
 
+  const skusParam = (req.query.skus && String(req.query.skus).trim()) || '';
   res.status(202).json({
     message: 'Sincronización general iniciada en segundo plano. Revisa los logs en Render.',
-    hint: 'Puede tardar varios minutos según cantidad de productos.'
+    hint: skusParam ? `Solo se sincronizarán los ${skusParam.split(',').length} SKUs indicados.` : 'Puede tardar varios minutos según cantidad de productos.'
   });
 
   (async function runSyncAll() {
     try {
       console.log('\n🔄 ========== SINCRONIZACIÓN GENERAL (sync-all) ==========');
       const skuStockMap = await shopify.getAllSKUsWithStock();
-      const skus = [...skuStockMap.keys()];
-      console.log(`📦 Total SKUs en Shopify: ${skus.length}\n`);
+      let skus = [...skuStockMap.keys()];
+
+      // Filtrar: ?skus= lista explícita, o SYNC_ALL_SKU_LIST env, o SYNC_ALL_SKU_PREFIX (prefijos)
+      const explicitList = skusParam
+        ? skusParam.split(',').map(s => s.trim()).filter(Boolean)
+        : (process.env.SYNC_ALL_SKU_LIST || '').split(',').map(s => s.trim()).filter(Boolean);
+      const prefixList = (process.env.SYNC_ALL_SKU_PREFIX || '').split(',').map(s => s.trim()).filter(Boolean);
+
+      if (explicitList.length > 0) {
+        skus = skus.filter(sku => explicitList.includes(sku));
+        console.log(`📋 Solo SKUs indicados (${explicitList.length} en la lista → ${skus.length} encontrados en Shopify)\n`);
+      } else if (prefixList.length > 0) {
+        skus = skus.filter(sku => prefixList.some(prefix => sku.startsWith(prefix)));
+        console.log(`📋 Solo SKUs con prefijo(s) [${prefixList.join(', ')}]: ${skus.length} de ${skuStockMap.size}\n`);
+      } else {
+        console.log(`📦 Total SKUs en Shopify: ${skus.length}\n`);
+      }
+
+      if (skus.length === 0) {
+        console.log('⚠️  No hay SKUs a sincronizar. Revisa ?skus= o SYNC_ALL_SKU_LIST / SYNC_ALL_SKU_PREFIX.');
+        return;
+      }
 
       let okMeli = 0, okFalabella = 0, failMeli = 0, failFalabella = 0, skipMeli = 0, skipFalabella = 0;
-      const delayMs = parseInt(process.env.SYNC_ALL_DELAY_MS || '500', 10);
+      const delayMs = parseInt(process.env.SYNC_ALL_DELAY_MS || '1200', 10);
 
       for (let i = 0; i < skus.length; i++) {
         const sku = skus[i];
@@ -923,7 +1054,9 @@ app.get('/sync-all', async (req, res) => {
       console.error(err.stack);
     }
   })();
-});
+}
+app.get('/sync-all', handleSyncAll);
+app.post('/sync-all', handleSyncAll);
 
 const PORT = process.env.PORT || 3000;
 
