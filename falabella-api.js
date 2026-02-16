@@ -42,15 +42,26 @@ function buildSignedQuery({ apiKey, params }) {
   return full;
 }
 
+/**
+ * Extrae mensaje y código de ErrorResponse de Falabella y lanza Error con mensaje claro.
+ * E009 = Access Denied → suele ser SKU no existente en catálogo Falabella o problema de permisos.
+ */
 function assertNoErrorResponse(xml) {
   const s = String(xml || '');
-  if (/<ErrorResponse\b/i.test(s) || /<Errors\b/i.test(s)) {
-    const msgMatch = s.match(/<Message[^>]*>([\s\S]*?)<\/Message>/i) ||
-                     s.match(/<ErrorMessage[^>]*>([\s\S]*?)<\/ErrorMessage>/i) ||
-                     s.match(/<Error[^>]*>([\s\S]*?)<\/Error>/i);
-    const msg = msgMatch ? msgMatch[1].trim() : 'Falabella Seller Center API error';
-    throw new Error(msg);
+  if (!/<ErrorResponse\b/i.test(s) && !/<Errors\b/i.test(s)) return;
+
+  const msgMatch = s.match(/<ErrorMessage[^>]*>([\s\S]*?)<\/ErrorMessage>/i) ||
+                   s.match(/<Message[^>]*>([\s\S]*?)<\/Message>/i) ||
+                   s.match(/<Error[^>]*>([\s\S]*?)<\/Error>/i);
+  const rawMsg = msgMatch ? msgMatch[1].trim() : 'Falabella Seller Center API error';
+  const codeMatch = rawMsg.match(/E(\d+)/i);
+  const code = codeMatch ? codeMatch[0].toUpperCase() : null;
+
+  let message = rawMsg;
+  if (code === 'E009' || /Access Denied/i.test(rawMsg)) {
+    message = `E009: Access Denied. El SKU puede no existir en tu catálogo de Falabella o hay un problema de credenciales/permisos. (API: ${rawMsg})`;
   }
+  throw new Error(message);
 }
 
 export default class FalabellaAPI {
@@ -68,6 +79,8 @@ export default class FalabellaAPI {
     this.apiKey = process.env.FALABELLA_API_KEY;
     this.version = process.env.FALABELLA_API_VERSION || '1.0';
     this.format = process.env.FALABELLA_API_FORMAT || 'XML';
+    // Código de país para BusinessUnits: facl=Chile, fape=Perú, faco=Colombia (requerido por ProductUpdate)
+    this.operatorCode = process.env.FALABELLA_OPERATOR_CODE || 'facl';
 
     if (!this.userId || !this.apiKey) {
       throw new Error('FALABELLA_USER_ID y FALABELLA_API_KEY deben estar configurados en .env');
@@ -175,7 +188,12 @@ export default class FalabellaAPI {
 <Request>
   <Product>
     <SellerSku>${safeSku}</SellerSku>
-    <Quantity>${q}</Quantity>
+    <BusinessUnits>
+      <BusinessUnit>
+        <OperatorCode>${this.operatorCode}</OperatorCode>
+        <Stock>${q}</Stock>
+      </BusinessUnit>
+    </BusinessUnits>
   </Product>
 </Request>`;
 

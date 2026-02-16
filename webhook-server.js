@@ -46,6 +46,9 @@ if (enableFalabella) {
 const stockOffset = parseInt(process.env.STOCK_OFFSET || '1', 10);
 const stockOffsetFalabella = parseInt(process.env.STOCK_OFFSET_FALABELLA || String(stockOffset), 10);
 
+/** SKUs para los que Falabella devolvió E009 Access Denied; no volvemos a llamar a Falabella hasta reinicio. */
+const falabellaAccessDeniedSkus = new Set();
+
 // ========== PROTECCIÓN CONTRA LOOPS (GENÉRICA) ==========
 // Flags para evitar loops y para evitar que Shopify dispare sync duplicado mientras procesamos una orden externa.
 const isSyncingFromMarketplace = {
@@ -120,17 +123,28 @@ async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason } = 
 
   // Falabella (solo si está inicializado, lo cual requiere ENABLE_FALABELLA=true + credenciales)
   if (falabella) {
-    try {
-      const fStock = calculateFalabellaStock(shopifyStock);
-      console.log(`   🧮 [sync:${reason || 'shopify'}] ${safeSku}: Shopify(${shopifyStock}) → Falabella(${fStock}, offset ${stockOffsetFalabella})`);
-      
-      const res = await falabella.updateStockBySKU(safeSku, fStock);
-      
-      console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → Falabella(${fStock})`);
-      results.push({ marketplace: 'falabella', ok: true, stock: fStock, shopifyStock, offset: stockOffsetFalabella });
-    } catch (e) {
-      console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error actualizando Falabella: ${e.message}`);
-      results.push({ marketplace: 'falabella', ok: false, reason: 'error', error: e.message });
+    if (falabellaAccessDeniedSkus.has(safeSku)) {
+      console.log(`   ⏭️  [sync:${reason || 'shopify'}] ${safeSku}: Falabella omitido (E009 anterior para este SKU)`);
+      results.push({ marketplace: 'falabella', ok: false, reason: 'access_denied_skipped', skipped: true });
+    } else {
+      try {
+        const fStock = calculateFalabellaStock(shopifyStock);
+        console.log(`   🧮 [sync:${reason || 'shopify'}] ${safeSku}: Shopify(${shopifyStock}) → Falabella(${fStock}, offset ${stockOffsetFalabella})`);
+
+        await falabella.updateStockBySKU(safeSku, fStock);
+
+        console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → Falabella(${fStock})`);
+        results.push({ marketplace: 'falabella', ok: true, stock: fStock, shopifyStock, offset: stockOffsetFalabella });
+      } catch (e) {
+        const isE009 = /E009|Access Denied/i.test(e.message);
+        if (isE009) {
+          falabellaAccessDeniedSkus.add(safeSku);
+          console.warn(`   ⚠️  [sync:${reason || 'shopify'}] ${safeSku}: Falabella E009 (SKU no en catálogo o sin permiso). No se reintentará hasta reinicio.`);
+        } else {
+          console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error actualizando Falabella: ${e.message}`);
+        }
+        results.push({ marketplace: 'falabella', ok: false, reason: isE009 ? 'access_denied' : 'error', error: e.message });
+      }
     }
   }
 
