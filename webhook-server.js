@@ -863,10 +863,11 @@ app.post('/webhooks/falabella/order', async (req, res) => {
     console.log('ℹ️  FASE 1: Modo observación - NO se ejecuta lógica real');
     console.log('='.repeat(60) + '\n');
 
-    const enableFalabella = String(process.env.ENABLE_FALABELLA || 'false').toLowerCase() === 'true';
+    // enableFalabella ya declarado arriba (línea ~740)
+    const enableFalabellaObs = String(process.env.ENABLE_FALABELLA || 'false').toLowerCase() === 'true';
 
     // MODO TEST: no tocar stock, no llamar APIs externas.
-    if (!enableFalabella) {
+    if (!enableFalabellaObs) {
       console.log('   ℹ️  ENABLE_FALABELLA=false → modo webhook_test (sin efectos colaterales)');
       return res.status(200).json({ ok: true, mode: 'webhook_test' });
     }
