@@ -873,6 +873,58 @@ app.get('/test-sync', async (req, res) => {
   }
 });
 
+/**
+ * Sincronización general: toma el stock actual de todos los productos en Shopify
+ * y lo envía a MercadoLibre y Falabella. Protegido por SYNC_ALL_SECRET.
+ * Uso: POST o GET /sync-all?key=TU_SECRETO
+ * Responde 202 y ejecuta la sync en segundo plano (revisa los logs).
+ */
+app.get('/sync-all', async (req, res) => {
+  const providedKey = req.query.key || req.headers['x-sync-all-key'] || '';
+  const secret = process.env.SYNC_ALL_SECRET || '';
+  if (!secret || providedKey !== secret) {
+    return res.status(403).json({ error: 'Acceso denegado. Configura SYNC_ALL_SECRET y usa ?key=... o header X-Sync-All-Key.' });
+  }
+
+  res.status(202).json({
+    message: 'Sincronización general iniciada en segundo plano. Revisa los logs en Render.',
+    hint: 'Puede tardar varios minutos según cantidad de productos.'
+  });
+
+  (async function runSyncAll() {
+    try {
+      console.log('\n🔄 ========== SINCRONIZACIÓN GENERAL (sync-all) ==========');
+      const skuStockMap = await shopify.getAllSKUsWithStock();
+      const skus = [...skuStockMap.keys()];
+      console.log(`📦 Total SKUs en Shopify: ${skus.length}\n`);
+
+      let okMeli = 0, okFalabella = 0, failMeli = 0, failFalabella = 0, skipMeli = 0, skipFalabella = 0;
+      const delayMs = parseInt(process.env.SYNC_ALL_DELAY_MS || '500', 10);
+
+      for (let i = 0; i < skus.length; i++) {
+        const sku = skus[i];
+        const stock = skuStockMap.get(sku);
+        const out = await syncSkuToMarketplacesFromShopify(sku, stock, { reason: 'sync_all' });
+        for (const r of out.results) {
+          if (r.marketplace === 'mercadolibre') { if (r.ok) okMeli++; else if (r.reason === 'not_found') skipMeli++; else failMeli++; }
+          if (r.marketplace === 'falabella') { if (r.ok) okFalabella++; else if (r.skipped || r.reason === 'access_denied_skipped') skipFalabella++; else failFalabella++; }
+        }
+        if ((i + 1) % 50 === 0) console.log(`   📊 Progreso: ${i + 1}/${skus.length} SKUs`);
+        if (delayMs > 0 && i < skus.length - 1) await new Promise(r => setTimeout(r, delayMs));
+      }
+
+      console.log('\n📊 ========== RESUMEN SINCRONIZACIÓN GENERAL ==========');
+      console.log(`   MercadoLibre: ✅ ${okMeli} actualizados, ⏭️ ${skipMeli} no en Meli, ❌ ${failMeli} errores`);
+      console.log(`   Falabella:    ✅ ${okFalabella} actualizados, ⏭️ ${skipFalabella} omitidos, ❌ ${failFalabella} errores`);
+      console.log(`   Total SKUs:   ${skus.length}`);
+      console.log('========================================================\n');
+    } catch (err) {
+      console.error('❌ Error en sincronización general:', err.message);
+      console.error(err.stack);
+    }
+  })();
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, async () => {
@@ -883,6 +935,7 @@ app.listen(PORT, async () => {
   console.log(`📡 Falabella order:         http://localhost:${PORT}/webhooks/falabella/order`);
   console.log(`💚 Health:                  http://localhost:${PORT}/health`);
   console.log(`🧪 Test sync:               http://localhost:${PORT}/test-sync?sku=B-M-CRU`);
+  console.log(`🔄 Sync general:             http://localhost:${PORT}/sync-all?key=SYNC_ALL_SECRET`);
   console.log(`\n🔍 Verificando órdenes pendientes de MercadoLibre...`);
   
   // Verificar órdenes pendientes al iniciar (solo una vez, en background)
