@@ -2,6 +2,7 @@ import MercadoLibreAPI from './mercadolibre-api.js';
 import ShopifyAPI from './shopify-api.js';
 import dotenv from 'dotenv';
 import { createIdempotencyStore } from './idempotency-store.js';
+import { meliItemIdToSkus, resolveSkuFromOrderItem } from './meli-sku-mapping.js';
 
 dotenv.config();
 
@@ -50,10 +51,15 @@ async function processOrder(orderId, shopify, meli, store) {
     console.log(`   Items en la orden: ${order.order_items.length}\n`);
 
     for (const orderItem of order.order_items) {
-      const { item: { id: itemId }, quantity, variation_id } = orderItem;
+      const { item, quantity } = orderItem;
+      const variation_id =
+        orderItem.variation_id ??
+        item?.variation_id ??
+        null;
+      const itemId = item?.id;
 
       try {
-        console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id || 'N/A'}, cantidad: ${quantity})`);
+        console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id ?? 'N/A'}, cantidad: ${quantity})`);
 
         const itemKey = `order:${orderId}:item:${itemId}:${variation_id || 'NA'}`;
         if (store.has(itemKey)) {
@@ -62,29 +68,18 @@ async function processOrder(orderId, shopify, meli, store) {
           continue;
         }
 
-        // Resolver SKU desde la variación o el item
-        let sku = null;
-        
-        if (variation_id) {
-          const variationResponse = await meli.client.get(`/items/${itemId}/variations/${variation_id}`);
-          const variation = variationResponse.data;
-          sku = variation.seller_custom_field;
-          
-          if (!sku) {
-            const attrComb = variation.attribute_combinations?.find(
-              a => a.id === 'SELLER_SKU' || a.name?.toLowerCase().includes('sku')
-            );
-            if (attrComb) {
-              sku = attrComb.value_name;
-            }
-          }
-        } else {
-          const itemResponse = await meli.client.get(`/items/${itemId}`);
-          const item = itemResponse.data;
-          sku = item.seller_sku || item.seller_custom_field;
+        // Mismo resolver determinístico que el webhook (mapping en memoria)
+        const { sku: resolvedSku, ambiguous } = resolveSkuFromOrderItem(itemId, variation_id);
+
+        if (ambiguous) {
+          const skusForItem = meliItemIdToSkus.get(itemId) || [];
+          console.log(`      ❌ item_id=${itemId} con variation_id=null tiene ${skusForItem.length} SKUs en el mapping. No se puede determinar cuál descontar.`);
+          itemsFailed++;
+          continue;
         }
 
-        if (!sku || sku.trim() === '') {
+        const sku = resolvedSku && String(resolvedSku).trim() ? resolvedSku : null;
+        if (!sku) {
           console.log(`      ⚠️  SKU no encontrado para item ${itemId}`);
           itemsFailed++;
           continue;
