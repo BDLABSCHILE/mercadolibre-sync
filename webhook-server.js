@@ -64,6 +64,132 @@ const idempotency = {
   falabella: createIdempotencyStore('falabella'),
 };
 
+// ========== MAPEO MELI item_id / variation_id → SKU (resolver determinístico) ==========
+// Fuente: mismo contenido que SKU_MAPPING en update-all-skus.js y VARIATION_SKU_MAP en update-skus.js
+const MELI_SKU_MAPPING = {
+  'CT-G-NE': { item_id: 'MLC3535073664', variation_id: 189654907244 },
+  'CT-G-CAFGA': { item_id: 'MLC3535073664', variation_id: 189654907246 },
+  'CT-G-CAM': { item_id: 'MLC3535073664', variation_id: 189654907248 },
+  'CT-G-CAR': { item_id: 'MLC3535073664', variation_id: 189654907250 },
+  'CT-G-DEN': { item_id: 'MLC3535073664', variation_id: 189654907252 },
+  'CT-G-MOKA': { item_id: 'MLC3535073664', variation_id: 189654907254 },
+  'CT-G-MUSE': { item_id: 'MLC3535073664', variation_id: 189654907256 },
+  'CT-G-NEGA': { item_id: 'MLC3535073664', variation_id: 189654907258 },
+  'PP-M-CAR': { item_id: 'MLC3539375298', variation_id: 196203833777 },
+  'PP-M-CRU': { item_id: 'MLC3539375298', variation_id: 196203833779 },
+  'PP-M-DENIM': { item_id: 'MLC3539375298', variation_id: 196203833781 },
+  'PP-M-MOKA': { item_id: 'MLC3539375298', variation_id: 196203833783 },
+  'PP-M-NEGRO': { item_id: 'MLC3539375298', variation_id: 196203833785 },
+  'B-M-CAFGA': { item_id: 'MLC3539387920', variation_id: 189749736598 },
+  'B-M-CAM': { item_id: 'MLC3539387920', variation_id: 189749736600 },
+  'B-M-CAR': { item_id: 'MLC3539387920', variation_id: 189749736602 },
+  'B-M-CHA': { item_id: 'MLC3539387920', variation_id: 189749736604 },
+  'B-M-CRU': { item_id: 'MLC3539387920', variation_id: 189749736606 },
+  'B-M-DEN': { item_id: 'MLC3539387920', variation_id: 189749736608 },
+  'B-M-MIEL': { item_id: 'MLC3539387920', variation_id: 189749736610 },
+  'B-M-MOKA': { item_id: 'MLC3539387920', variation_id: 189749736612 },
+  'B-M-MUS': { item_id: 'MLC3539387920', variation_id: 189749736614 },
+  'B-M-MUSE': { item_id: 'MLC3539387920', variation_id: 189749736616 },
+  'B-M-NE': { item_id: 'MLC3539387920', variation_id: 189749736618 },
+  'B-M-NEGA': { item_id: 'MLC3539387920', variation_id: 189749736620 },
+  'B-M-SENE': { item_id: 'MLC3539387920', variation_id: 189749736622 },
+  'MA-C-CAFGA': { item_id: 'MLC3539608750', variation_id: 196203871333 },
+  'MA-C-CAM': { item_id: 'MLC3539608750', variation_id: 196203871335 },
+  'MA-C-CAR': { item_id: 'MLC3539608750', variation_id: 196203871337 },
+  'MA-C-CHA': { item_id: 'MLC3539608750', variation_id: 196203871339 },
+  'MA-C-CRU': { item_id: 'MLC3539608750', variation_id: 196203871341 },
+  'MA-C-DEN': { item_id: 'MLC3539608750', variation_id: 196203871343 },
+  'MA-C-MIEL': { item_id: 'MLC3539608750', variation_id: 196203871345 },
+  'MA-C-MOKA': { item_id: 'MLC3539608750', variation_id: 196203871347 },
+  'MA-C-MUS': { item_id: 'MLC3539608750', variation_id: 196203871349 },
+  'MA-C-MUSE': { item_id: 'MLC3539608750', variation_id: 196203871351 },
+  'MA-C-NE': { item_id: 'MLC3539608750', variation_id: 196203871353 },
+  'MA-C-NEGA': { item_id: 'MLC3539608750', variation_id: 196203871355 },
+  'MA-C-SENE': { item_id: 'MLC3539608750', variation_id: 196203871357 },
+  'TJ-C-NE': { item_id: 'MLC3539440116', variation_id: 189749808526 },
+  'B-C-CAFGA': { item_id: 'MLC3539440132', variation_id: 189749808580 },
+  'B-C-CAM': { item_id: 'MLC3539440132', variation_id: 189749808582 },
+  'B-C-CAR': { item_id: 'MLC3539440132', variation_id: 189749808584 },
+  'B-C-CHA': { item_id: 'MLC3539440132', variation_id: 189749808586 },
+  'B-C-CRU': { item_id: 'MLC3539440132', variation_id: 189749808588 },
+  'B-C-DEN': { item_id: 'MLC3539440132', variation_id: 189749808590 },
+  'B-C-MIEL': { item_id: 'MLC3539440132', variation_id: 189749808592 },
+  'B-C-MOKA': { item_id: 'MLC3539440132', variation_id: 189749808594 },
+  'B-C-MUS': { item_id: 'MLC3539440132', variation_id: 189749808596 },
+  'B-C-MUSE': { item_id: 'MLC3539440132', variation_id: 189749808598 },
+  'B-C-NE': { item_id: 'MLC3539440132', variation_id: 189749808600 },
+  'B-C-NEGA': { item_id: 'MLC3539440132', variation_id: 189749808602 },
+  'B-C-SENE': { item_id: 'MLC3539440132', variation_id: 189749808604 },
+  'B-G-CAFGA': { item_id: 'MLC3539440134', variation_id: 189749808606 },
+  'B-G-CAM': { item_id: 'MLC3539440134', variation_id: 189749808608 },
+  'B-G-CAR': { item_id: 'MLC3539440134', variation_id: 189749808610 },
+  'B-G-CHA': { item_id: 'MLC3539440134', variation_id: 189749808612 },
+  'B-G-CRU': { item_id: 'MLC3539440134', variation_id: 189749808614 },
+  'B-G-DEN': { item_id: 'MLC3539440134', variation_id: 189749808616 },
+  'B-G-MIEL': { item_id: 'MLC3539440134', variation_id: 189749808618 },
+  'B-G-MOKA': { item_id: 'MLC3539440134', variation_id: 189749808620 },
+  'B-G-MUS': { item_id: 'MLC3539440134', variation_id: 189749808622 },
+  'B-G-MUSE': { item_id: 'MLC3539440134', variation_id: 189749808624 },
+  'B-G-NE': { item_id: 'MLC3539440134', variation_id: 189749808626 },
+  'B-G-NEGA': { item_id: 'MLC3539440134', variation_id: 189749808628 },
+  'B-G-SENE': { item_id: 'MLC3539440134', variation_id: 189749808630 },
+  'T-M-CAFGA': { item_id: 'MLC3539466112', variation_id: 196203745941 },
+  'T-M-CAM': { item_id: 'MLC3539466112', variation_id: 196203745943 },
+  'T-M-CAR': { item_id: 'MLC3539466112', variation_id: 196203745945 },
+  'T-M-CHA': { item_id: 'MLC3539466112', variation_id: 196203745947 },
+  'T-M-CRU': { item_id: 'MLC3539466112', variation_id: 196203745949 },
+  'T-M-DEN': { item_id: 'MLC3539466112', variation_id: 196203745951 },
+  'T-M-MIEL': { item_id: 'MLC3539466112', variation_id: 196203745953 },
+  'T-M-MOKA': { item_id: 'MLC3539466112', variation_id: 196203745955 },
+  'T-M-MUS': { item_id: 'MLC3539466112', variation_id: 196203745957 },
+  'T-M-NE': { item_id: 'MLC3539466112', variation_id: 196203745959 },
+  'T-M-NEGA': { item_id: 'MLC3539466112', variation_id: 196203745961 },
+  'T-M-SENE': { item_id: 'MLC3539466112', variation_id: 196203745963 },
+  'M-C-CAFGA': { item_id: 'MLC3539608746', variation_id: 196203871279 },
+  'M-C-CAM': { item_id: 'MLC3539608746', variation_id: 196203871281 },
+  'M-C-CAR': { item_id: 'MLC3539608746', variation_id: 196203871283 },
+  'M-C-CHA': { item_id: 'MLC3539608746', variation_id: 196203871285 },
+  'M-C-CRU': { item_id: 'MLC3539608746', variation_id: 196203871287 },
+  'M-C-DEN': { item_id: 'MLC3539608746', variation_id: 196203871289 },
+  'M-C-MIEL': { item_id: 'MLC3539608746', variation_id: 196203871291 },
+  'M-C-MOKA': { item_id: 'MLC3539608746', variation_id: 196203871293 },
+  'M-C-MUS': { item_id: 'MLC3539608746', variation_id: 196203871295 },
+  'M-C-NE': { item_id: 'MLC3539608746', variation_id: 196203871297 },
+  'M-C-NEGA': { item_id: 'MLC3539608746', variation_id: 196203871299 },
+  'M-C-SENE': { item_id: 'MLC3539608746', variation_id: 196203871301 },
+};
+const MELI_VARIATION_SKU_MAP = {
+  '189749746668': 'MA-G-CHA',
+  '189749746686': 'MA-G-SENE',
+  '189749746684': 'MA-G-NEGA',
+  '189749746670': 'MA-G-CRU',
+  '189749746672': 'MA-G-DEN',
+  '189749746666': 'MA-G-CAR',
+  '189749746676': 'MA-G-MOKA',
+  '189749746664': 'MA-G-CAM',
+  '189749746678': 'MA-G-MUS',
+  '189749746662': 'MA-G-CAFGA',
+  '189749746674': 'MA-G-MIEL',
+  '189749746682': 'MA-G-NE',
+  '189749746680': 'MA-G-MUSE',
+};
+const MELI_EXTRA_ITEM_ID = 'MLC3539517694';
+
+const meliVariationIdToSku = new Map();
+const meliItemIdToSkus = new Map();
+for (const [sku, data] of Object.entries(MELI_SKU_MAPPING)) {
+  meliVariationIdToSku.set(String(data.variation_id), sku);
+  const list = meliItemIdToSkus.get(data.item_id) || [];
+  if (!list.includes(sku)) list.push(sku);
+  meliItemIdToSkus.set(data.item_id, list);
+}
+for (const [variationId, sku] of Object.entries(MELI_VARIATION_SKU_MAP)) {
+  meliVariationIdToSku.set(String(variationId), sku);
+  const list = meliItemIdToSkus.get(MELI_EXTRA_ITEM_ID) || [];
+  if (!list.includes(sku)) list.push(sku);
+  meliItemIdToSkus.set(MELI_EXTRA_ITEM_ID, list);
+}
+
 /**
  * Calcula el stock para MercadoLibre
  */
@@ -311,6 +437,192 @@ app.post('/webhook/inventory', shopifyRawParser, async (req, res) => {
 app.use(express.json());
 
 /**
+ * Procesa una orden de MercadoLibre: loop de items, resolver determinístico, descuento en Shopify, idempotencia.
+ * Usado por el webhook real y por el endpoint de prueba interna.
+ * @param {object} order - Objeto orden (order_items, status, etc.)
+ * @param {string} orderId - ID de la orden (para claves de idempotencia)
+ * @param {{ dryRun?: boolean }} options - dryRun: si true, no llama a Shopify ni marca idempotencia (solo valida resolver)
+ * @returns {Promise<{ success, order_id, status, items_processed, items_failed, total_items, fully_processed, results }>}
+ */
+async function processMercadoLibreOrder(order, orderId, options = {}) {
+  const dryRun = Boolean(options.dryRun);
+  const orderKey = `order:${orderId}`;
+  let itemsProcessed = 0;
+  let itemsFailed = 0;
+  const results = [];
+
+  if (!order.order_items || order.order_items.length === 0) {
+    console.log(`⚠️  Orden ${orderId} no tiene items`);
+    return {
+      success: false,
+      order_id: orderId,
+      status: order.status || null,
+      items_processed: 0,
+      items_failed: 0,
+      total_items: 0,
+      fully_processed: false,
+      results: []
+    };
+  }
+
+  console.log(`   Items en la orden: ${order.order_items.length}\n`);
+
+  for (const orderItem of order.order_items) {
+    const { item, quantity } = orderItem;
+    const variation_id =
+      orderItem.variation_id ??
+      item?.variation_id ??
+      null;
+    const itemId = item?.id;
+
+    try {
+      console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id ?? 'null'}, cantidad: ${quantity})`);
+
+      const itemKey = `order:${orderId}:item:${itemId}:${variation_id || 'NA'}`;
+      if (!dryRun && idempotency.mercadolibre.has(itemKey)) {
+        console.log(`      ⏭️  Item ya procesado previamente: ${itemKey}`);
+        itemsProcessed++;
+        results.push({ itemId, variationId: variation_id, status: 'skipped_already_processed' });
+        continue;
+      }
+
+      let sku = null;
+      if (variation_id != null && variation_id !== '') {
+        sku = meliVariationIdToSku.get(String(variation_id)) ?? null;
+      } else {
+        const skusForItem = meliItemIdToSkus.get(itemId) || [];
+        if (skusForItem.length === 1) {
+          sku = skusForItem[0];
+        } else if (skusForItem.length > 1) {
+          console.log(`      ❌ item_id=${itemId} con variation_id=null tiene ${skusForItem.length} SKUs en el mapping (${skusForItem.join(', ')}). No se puede determinar cuál descontar; NO se descuenta stock.`);
+          itemsFailed++;
+          results.push({ itemId, variationId: variation_id, sku: null, status: 'ambiguous_item_no_variation' });
+          continue;
+        }
+      }
+
+      if (!sku || sku.trim() === '') {
+        console.log(`      ⚠️  SKU no encontrado para item ${itemId}, variación ${variation_id || 'N/A'}`);
+        itemsFailed++;
+        results.push({ itemId, variationId: variation_id, sku: null, status: 'sku_not_found' });
+        continue;
+      }
+
+      console.log(`      ✅ SKU resuelto: ${sku}`);
+
+      if (dryRun) {
+        itemsProcessed++;
+        results.push({ itemId, variationId: variation_id, sku, quantity, status: 'success_dry_run' });
+        continue;
+      }
+
+      const updated = await shopify.updateStockBySKU(sku, quantity);
+      if (updated) {
+        idempotency.mercadolibre.mark(itemKey);
+        const currentStock = await shopify.getStockBySKU(sku);
+        console.log(`      ✅ Stock actualizado en Shopify: ${sku} (cantidad descontada: ${quantity}, stock actual: ${currentStock})`);
+        itemsProcessed++;
+        results.push({ itemId, variationId: variation_id, sku, quantity, status: 'success', stockAfter: currentStock });
+      } else {
+        console.log(`      ❌ Error actualizando stock para SKU ${sku}`);
+        itemsFailed++;
+        results.push({ itemId, variationId: variation_id, sku, quantity, status: 'update_failed' });
+      }
+    } catch (error) {
+      console.error(`      ❌ Error procesando item ${itemId}:`, error.response?.data || error.message);
+      itemsFailed++;
+      results.push({ itemId, variationId: variation_id, status: 'error', error: error.message });
+    }
+  }
+
+  const fullyProcessed = itemsFailed === 0 && itemsProcessed === order.order_items.length;
+  if (!dryRun && fullyProcessed) {
+    idempotency.mercadolibre.mark(orderKey);
+    console.log(`\n✅ Orden ${orderId} procesada completamente (${itemsProcessed}/${order.order_items.length} items)`);
+  } else if (!dryRun && itemsFailed > 0) {
+    console.log(`\n⚠️  Orden ${orderId} procesada PARCIALMENTE: ${itemsProcessed} exitosos, ${itemsFailed} fallidos`);
+  }
+
+  console.log(`\n📊 Resumen: ${itemsProcessed} procesados, ${itemsFailed} fallidos, ${order.order_items.length} total`);
+
+  if (!dryRun) {
+    const uniqueSkus = Array.from(new Set(results.map(r => r.sku).filter(Boolean)));
+    if (uniqueSkus.length > 0) {
+      console.log(`\n🔁 Redistribuyendo stock desde Shopify para ${uniqueSkus.length} SKU(s)...`);
+      for (const sku of uniqueSkus) {
+        const s = await shopify.getStockBySKU(sku);
+        if (s === null) continue;
+        await syncSkuToMarketplacesFromShopify(sku, s, { reason: 'redistribute_after_mercadolibre_sale' });
+      }
+    }
+  }
+
+  return {
+    success: itemsFailed === 0,
+    order_id: orderId,
+    status: order.status || null,
+    items_processed: itemsProcessed,
+    items_failed: itemsFailed,
+    total_items: order.order_items.length,
+    fully_processed: fullyProcessed,
+    results
+  };
+}
+
+// ========== TEST INTERNO: orden mockeada (solo validar resolver, sin MercadoLibre) ==========
+const TEST_MOCK_ORDER_CASE_A = {
+  id: 'test-order-case-a',
+  status: 'paid',
+  order_items: [
+    { item: { id: 'MLC3535073664' }, quantity: 1, variation_id: 189654907244 }
+  ]
+};
+const TEST_MOCK_ORDER_CASE_B = {
+  id: 'test-order-case-b',
+  status: 'paid',
+  order_items: [
+    { item: { id: 'MLC3539440116' }, quantity: 1, variation_id: null }
+  ]
+};
+const TEST_MOCK_ORDER_CASE_C = {
+  id: 'test-order-case-c',
+  status: 'paid',
+  order_items: [
+    { item: { id: 'MLC3539466112' }, quantity: 1, variation_id: null }
+  ]
+};
+
+app.post('/__test__/mercadolibre/order', async (req, res) => {
+  try {
+    const order = req.body && Object.keys(req.body).length > 0 ? req.body : null;
+    const orderId = order?.id ?? order?.order_id ?? 'test-order-unknown';
+    const dryRun = String(req.query.dry_run || req.query.dryRun || '1').toLowerCase() === '1' || String(req.query.dry_run) === 'true';
+
+    if (!order || !order.order_items || !Array.isArray(order.order_items)) {
+      return res.status(400).json({
+        error: 'Body debe ser un objeto order con order_items (array). Ejemplo: TEST_MOCK_ORDER_CASE_A/B/C en este archivo.',
+        cases: {
+          A: 'variation_id válido en mapping → debe resolver SKU',
+          B: 'variation_id=null, item_id con 1 SKU → debe resolver',
+          C: 'variation_id=null, item_id con varios SKUs → ambiguous_item_no_variation, no descontar'
+        }
+      });
+    }
+
+    console.log(`\n🧪 [TEST] Procesando orden mock order_id=${orderId}, dry_run=${dryRun}`);
+    const result = await processMercadoLibreOrder(order, orderId, { dryRun });
+    console.log(`🧪 [TEST] Resultado: success=${result.success}, items_processed=${result.items_processed}, items_failed=${result.items_failed}\n`);
+    return res.status(200).json({ ...result, _test: true, dry_run: dryRun });
+  } catch (error) {
+    console.error('🧪 [TEST] Error:', error.message);
+    return res.status(500).json({ error: error.message, _test: true });
+  }
+});
+
+// Log completo de order solo para la próxima orden recibida (temporal, para ver order_items y variation_id)
+let _logOrderNextMeliWebhook = true;
+
+/**
  * Endpoint para recibir webhooks de MercadoLibre
  * Configura este endpoint en MercadoLibre: https://developers.mercadolibre.com.ar/es_ar/notificaciones
  * Topic: orders_v2
@@ -320,7 +632,6 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
   try {
     const { resource, topic, user_id } = req.body;
 
-    // Validar que sea una notificación de órdenes
     if (topic !== 'orders_v2') {
       console.log(`⚠️  Topic no reconocido: ${topic}`);
       console.log(`   💡 Este webhook es de MercadoLibre, solo procesamos 'orders_v2'`);
@@ -332,7 +643,6 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
       return res.status(400).json({ error: 'resource es requerido' });
     }
 
-    // Extraer order_id desde resource (formato: /orders/{order_id})
     const orderIdMatch = resource.match(/\/orders\/(\d+)/);
     if (!orderIdMatch) {
       console.log(`⚠️  No se pudo extraer order_id de resource: ${resource}`);
@@ -340,8 +650,6 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     }
 
     const orderId = orderIdMatch[1];
-
-    // ========== IDEMPOTENCIA ==========
     const orderKey = `order:${orderId}`;
     if (idempotency.mercadolibre.has(orderKey)) {
       console.log(`⏭️  [mercadolibre] Orden ${orderId} ya procesada anteriormente, ignorando`);
@@ -352,7 +660,6 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     console.log(`   Resource: ${resource}`);
     console.log(`   User ID: ${user_id}`);
 
-    // Obtener la orden completa
     const orderResponse = await meli.client.get(`/orders/${orderId}`);
     const order = orderResponse.data;
 
@@ -361,183 +668,33 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
       return res.status(500).json({ error: 'Error obteniendo orden' });
     }
 
-    // ========== VALIDACIÓN DE ESTADOS ==========
-    // Solo procesar órdenes en estados válidos
+    if (_logOrderNextMeliWebhook) {
+      console.log('📋 [TEMP] order completo (solo esta vez):');
+      console.log(JSON.stringify(order, null, 2));
+      _logOrderNextMeliWebhook = false;
+    }
+
     const validStatuses = ['confirmed', 'payment_required', 'payment_in_process', 'paid'];
     if (!validStatuses.includes(order.status)) {
       console.log(`⏭️  Orden ${orderId} en estado "${order.status}", no procesada aún`);
-      return res.status(200).json({ 
-        message: 'Orden en estado no procesable', 
-        order_id: orderId,
-        status: order.status 
-      });
+      return res.status(200).json({ message: 'Orden en estado no procesable', order_id: orderId, status: order.status });
     }
 
     console.log(`   Estado: ${order.status}`);
     console.log(`   Total: ${order.total_amount} ${order.currency_id}`);
 
-    // ========== ACTIVAR PROTECCIÓN CONTRA LOOPS ==========
     isSyncingFromMarketplace.mercadolibre = true;
-
     try {
-      let itemsProcessed = 0;
-      let itemsFailed = 0;
-      const results = [];
-
-      // Procesar cada item de la orden
-      if (!order.order_items || order.order_items.length === 0) {
-        console.log(`⚠️  Orden ${orderId} no tiene items`);
-        return res.status(200).json({ message: 'Orden sin items', order_id: orderId });
-      }
-
-      console.log(`   Items en la orden: ${order.order_items.length}\n`);
-
-      for (const orderItem of order.order_items) {
-        const { item: { id: itemId }, quantity, variation_id } = orderItem;
-
-        try {
-          console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id || 'N/A'}, cantidad: ${quantity})`);
-
-          // Idempotencia por item (evita doble descuento en retries parciales)
-          const itemKey = `order:${orderId}:item:${itemId}:${variation_id || 'NA'}`;
-          if (idempotency.mercadolibre.has(itemKey)) {
-            console.log(`      ⏭️  Item ya procesado previamente: ${itemKey}`);
-            itemsProcessed++;
-            results.push({ itemId, variationId: variation_id, status: 'skipped_already_processed' });
-            continue;
-          }
-
-          // Resolver SKU desde la variación o el item
-          let sku = null;
-          
-          if (variation_id) {
-            // Si tiene variación, obtener la variación específica
-            const variationResponse = await meli.client.get(`/items/${itemId}/variations/${variation_id}`);
-            const variation = variationResponse.data;
-            sku = variation.seller_custom_field;
-            
-            if (!sku) {
-              // Fallback: buscar en attribute_combinations
-              const attrComb = variation.attribute_combinations?.find(
-                a => a.id === 'SELLER_SKU' || a.name?.toLowerCase().includes('sku')
-              );
-              if (attrComb) {
-                sku = attrComb.value_name;
-              }
-            }
-          } else {
-            // Si no tiene variación, obtener el item directamente
-            const itemResponse = await meli.client.get(`/items/${itemId}`);
-            const item = itemResponse.data;
-            sku = item.seller_sku || item.seller_custom_field;
-          }
-
-          if (!sku || sku.trim() === '') {
-            console.log(`      ⚠️  SKU no encontrado para item ${itemId}, variación ${variation_id || 'N/A'}`);
-            itemsFailed++;
-            results.push({ itemId, variationId: variation_id, sku: null, status: 'sku_not_found' });
-            continue;
-          }
-
-          console.log(`      ✅ SKU resuelto: ${sku}`);
-
-          // Descontar stock en Shopify
-          const updated = await shopify.updateStockBySKU(sku, quantity);
-          
-          if (updated) {
-            idempotency.mercadolibre.mark(itemKey);
-            const currentStock = await shopify.getStockBySKU(sku);
-            console.log(`      ✅ Stock actualizado en Shopify: ${sku} (cantidad descontada: ${quantity}, stock actual: ${currentStock})`);
-            itemsProcessed++;
-            results.push({ 
-              itemId, 
-              variationId: variation_id, 
-              sku, 
-              quantity, 
-              status: 'success',
-              stockAfter: currentStock
-            });
-          } else {
-            console.log(`      ❌ Error actualizando stock para SKU ${sku}`);
-            itemsFailed++;
-            results.push({ itemId, variationId: variation_id, sku, quantity, status: 'update_failed' });
-          }
-
-        } catch (error) {
-          console.error(`      ❌ Error procesando item ${itemId}:`, error.response?.data || error.message);
-          itemsFailed++;
-          results.push({ 
-            itemId, 
-            variationId: variation_id, 
-            status: 'error', 
-            error: error.message 
-          });
-        }
-      }
-
-      // ========== MARCAR ORDEN COMO PROCESADA ==========
-      // SOLO marcar como procesada si TODOS los items se procesaron correctamente
-      // Si hay items fallidos, NO marcar como procesada para poder reintentar
-      if (itemsFailed === 0 && itemsProcessed === order.order_items.length) {
-        idempotency.mercadolibre.mark(orderKey);
-        console.log(`\n✅ Orden ${orderId} procesada completamente (${itemsProcessed}/${order.order_items.length} items)`);
-      } else {
-        console.log(`\n⚠️  Orden ${orderId} procesada PARCIALMENTE:`);
-        console.log(`   ✅ Items exitosos: ${itemsProcessed}`);
-        console.log(`   ❌ Items fallidos: ${itemsFailed}`);
-        console.log(`   📦 Total items: ${order.order_items.length}`);
-        console.log(`   ⚠️  NO se marca como procesada para permitir reintento`);
-        // NO marcar como procesada - permitirá reintento
-      }
-
-      // ========== RESUMEN ==========
-      console.log(`\n📊 Resumen de procesamiento:`);
-      console.log(`   ✅ Items procesados: ${itemsProcessed}`);
-      console.log(`   ❌ Items con errores: ${itemsFailed}`);
-      console.log(`   📦 Total items: ${order.order_items.length}`);
-
-      // Redistribuir stock actualizado a todos los marketplaces desde Shopify (fuente de verdad)
-      // Importante: NO confiar en webhooks Shopify durante el procesamiento (están bloqueados por isSyncingFromMarketplace)
-      const uniqueSkus = Array.from(new Set(results.map(r => r.sku).filter(Boolean)));
-      if (uniqueSkus.length > 0) {
-        console.log(`\n🔁 Redistribuyendo stock desde Shopify para ${uniqueSkus.length} SKU(s)...`);
-        for (const sku of uniqueSkus) {
-          const s = await shopify.getStockBySKU(sku);
-          if (s === null) continue;
-          await syncSkuToMarketplacesFromShopify(sku, s, { reason: 'redistribute_after_mercadolibre_sale' });
-        }
-      }
-
-      // Retornar 200 incluso si hay errores parciales (para que MercadoLibre no reintente infinitamente)
-      // Pero loguear claramente el estado
-      return res.status(200).json({
-        success: itemsFailed === 0,
-        order_id: orderId,
-        status: order.status,
-        items_processed: itemsProcessed,
-        items_failed: itemsFailed,
-        total_items: order.order_items.length,
-        fully_processed: itemsFailed === 0 && itemsProcessed === order.order_items.length,
-        results
-      });
-
+      const result = await processMercadoLibreOrder(order, orderId);
+      return res.status(200).json(result);
     } finally {
-      // ========== DESACTIVAR PROTECCIÓN CONTRA LOOPS ==========
       isSyncingFromMarketplace.mercadolibre = false;
     }
-
   } catch (error) {
-    // Asegurar que el flag se desactive incluso en caso de error
     isSyncingFromMarketplace.mercadolibre = false;
-    
     console.error('❌ Error procesando webhook de MercadoLibre:', error.response?.data || error.message);
     console.error('Stack:', error.stack);
-    
-    // Retornar 500 para que MercadoLibre reintente
-    return res.status(500).json({ 
-      error: error.message,
-      retry: true 
-    });
+    return res.status(500).json({ error: error.message, retry: true });
   }
 });
 

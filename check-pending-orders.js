@@ -189,16 +189,30 @@ async function checkPendingOrders() {
       return;
     }
 
-    const orders = allOrders;
+    // Solo procesar órdenes recientes (no tocar órdenes antiguas ya ajustadas a mano)
+    const lastHours = parseInt(process.env.PENDING_ORDERS_LAST_HOURS || '24', 10);
+    const cutoffMs = Date.now() - (lastHours * 60 * 60 * 1000);
+    const ordersToProcess = allOrders.filter((o) => {
+      const dateStr = o.date_created || o.date_last_updated || o.date_closed;
+      const orderTime = dateStr ? new Date(dateStr).getTime() : 0;
+      return orderTime > cutoffMs;
+    });
+    const skippedOld = allOrders.length - ordersToProcess.length;
+    if (skippedOld > 0) {
+      console.log(`⏭️  Ignorando ${skippedOld} órdenes anteriores a las últimas ${lastHours}h (PENDING_ORDERS_LAST_HOURS). Solo se procesan ${ordersToProcess.length} recientes.\n`);
+    }
+
+    const orders = ordersToProcess;
 
     let processedCount = 0;
     let skippedCount = 0;
     let partialCount = 0; // Órdenes procesadas parcialmente
     let errorCount = 0;
 
-    for (const orderId of orders) {
-      const orderIdStr = orderId.toString();
-      
+    for (const order of orders) {
+      const orderIdStr = order.id != null ? String(order.id) : null;
+      if (!orderIdStr) continue;
+
       if (store.has(`order:${orderIdStr}`)) {
         skippedCount++;
         continue;
