@@ -725,6 +725,17 @@ app.post('/webhooks/falabella/order', async (req, res) => {
         break;
       }
     }
+    // Falabella envía { event: "onOrderCreated", payload: { OrderId: 123 } }
+    if (!detectedOrderId && rawBody?.payload && typeof rawBody.payload === 'object') {
+      const p = rawBody.payload;
+      for (const field of possibleOrderIdFields) {
+        if (p[field] !== undefined && p[field] !== null) {
+          detectedOrderId = String(p[field]);
+          detectedOrderIdField = `payload.${field}`;
+          break;
+        }
+      }
+    }
 
     let orderIdForProcess = null;
     if (detectedOrderId) {
