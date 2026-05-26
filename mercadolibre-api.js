@@ -1058,6 +1058,53 @@ class MercadoLibreAPI {
   }
 
   /**
+   * Actualiza el precio de un item o variación.
+   * @param {string} itemId
+   * @param {number} price
+   * @param {number|null} variationId
+   * @returns {Promise<boolean>}
+   */
+  async updatePrice(itemId, price, variationId = null) {
+    try {
+      const p = Number(price);
+      if (!Number.isFinite(p) || p <= 0) {
+        console.error(`updatePrice: precio inválido para ${itemId}: ${price}`);
+        return false;
+      }
+      if (variationId !== null) {
+        const response = await this.client.put(`/items/${itemId}/variations/${variationId}`, { price: p });
+        return response.status === 200;
+      }
+      const response = await this.client.put(`/items/${itemId}`, { price: p });
+      return response.status === 200;
+    } catch (error) {
+      console.error(`Error actualizando precio para item ${itemId}:`, error.response?.data || error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Lee el precio actual de un item o variación.
+   * @param {string} itemId
+   * @param {number|null} variationId
+   * @returns {Promise<number|null>}
+   */
+  async getPrice(itemId, variationId = null) {
+    try {
+      const r = await this.client.get(`/items/${itemId}`);
+      const item = r.data;
+      if (variationId !== null && item.variations) {
+        const v = item.variations.find((v) => v.id === variationId);
+        if (v && v.price != null) return Number(v.price);
+      }
+      return item.price != null ? Number(item.price) : null;
+    } catch (error) {
+      console.error(`Error obteniendo precio para item ${itemId}:`, error.response?.data || error.message);
+      return null;
+    }
+  }
+
+  /**
    * Obtiene el stock actual de un item o variación
    * @param {string} itemId - ID del item en MercadoLibre
    * @param {number|null} variationId - ID de la variación (si tiene variaciones)
