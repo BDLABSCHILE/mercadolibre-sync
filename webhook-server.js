@@ -11,6 +11,7 @@ import { config } from './src/config.js';
 import { logger } from './src/logger.js';
 import { requestId } from './src/middleware/request-id.js';
 import { verifyShopifyHmac } from './src/middleware/verify-shopify-hmac.js';
+import adminSkusRouter from './src/routes/admin-skus.js';
 
 // Obtener el directorio actual para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -333,6 +334,9 @@ app.post('/webhook/inventory', shopifyRawParser, verifyShopifyHmac, async (req, 
 
 // ========== JSON para el resto de rutas (MercadoLibre, etc.) ==========
 app.use(express.json());
+
+// Endpoints administrativos (mapping SKU, etc.). Auth con SYNC_ALL_SECRET.
+app.use('/admin/skus', adminSkusRouter);
 
 /**
  * Procesa una orden de MercadoLibre: loop de items, resolver determinístico, descuento en Shopify, idempotencia.
