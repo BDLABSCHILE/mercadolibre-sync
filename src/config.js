@@ -7,49 +7,57 @@ const booleanish = z
   .union([z.boolean(), z.string()])
   .transform((v) => (typeof v === 'boolean' ? v : ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase())));
 
+// Render (y muchos hosts) serializan envs "vacías" como string vacío en lugar de undefined.
+// Para evitar que un "" rompa z.coerce.number() (que coerciona "" a 0), normalizamos
+// strings vacíos / solo espacios a undefined antes de aplicar el schema.
+const emptyToUndef = (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v);
+const envStr = (s) => z.preprocess(emptyToUndef, s);
+const envNum = (s) => z.preprocess(emptyToUndef, s);
+
 const schema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
-  PORT: z.coerce.number().int().positive().default(3000),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  NODE_ENV: envStr(z.enum(['development', 'production', 'test']).default('production')),
+  PORT: envNum(z.coerce.number().int().positive().default(3000)),
+  LOG_LEVEL: envStr(z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')),
 
-  DATABASE_URL: z.string().url().optional(),
+  DATABASE_URL: envStr(z.string().url().optional()),
 
-  SHOPIFY_STORE_URL: z.string().min(1),
-  SHOPIFY_ACCESS_TOKEN: z.string().min(1),
-  SHOPIFY_LOCATION_ID: z.string().min(1),
-  SHOPIFY_API_SECRET: z.string().min(1).optional(),
+  SHOPIFY_STORE_URL: envStr(z.string().min(1)),
+  SHOPIFY_ACCESS_TOKEN: envStr(z.string().min(1)),
+  SHOPIFY_LOCATION_ID: envStr(z.string().min(1)),
+  SHOPIFY_API_SECRET: envStr(z.string().min(1).optional()),
 
-  MELI_APP_ID: z.string().min(1),
-  MELI_CLIENT_SECRET: z.string().min(1),
-  MELI_REFRESH_TOKEN: z.string().min(1),
-  MELI_USER_ID: z.string().min(1),
-  MELI_ACCESS_TOKEN: z.string().optional(),
+  MELI_APP_ID: envStr(z.string().min(1)),
+  MELI_CLIENT_SECRET: envStr(z.string().min(1)),
+  MELI_REFRESH_TOKEN: envStr(z.string().min(1)),
+  MELI_USER_ID: envStr(z.string().min(1)),
+  MELI_ACCESS_TOKEN: envStr(z.string().optional()),
 
-  ENABLE_FALABELLA: booleanish.default(false),
-  FALABELLA_SC_API_HOST: z.string().url().default('https://sellercenter-api.falabella.com'),
-  FALABELLA_USER_ID: z.string().optional(),
-  FALABELLA_API_KEY: z.string().optional(),
-  FALABELLA_API_VERSION: z.string().default('1.0'),
-  FALABELLA_API_FORMAT: z.enum(['XML', 'JSON']).default('XML'),
-  FALABELLA_OPERATOR_CODE: z.string().default('facl'),
-  FALABELLA_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+  ENABLE_FALABELLA: z.preprocess(emptyToUndef, booleanish.default(false)),
+  FALABELLA_SC_API_HOST: envStr(z.string().url().default('https://sellercenter-api.falabella.com')),
+  FALABELLA_USER_ID: envStr(z.string().optional()),
+  FALABELLA_API_KEY: envStr(z.string().optional()),
+  FALABELLA_API_VERSION: envStr(z.string().default('1.0')),
+  FALABELLA_API_FORMAT: envStr(z.enum(['XML', 'JSON']).default('XML')),
+  FALABELLA_OPERATOR_CODE: envStr(z.string().default('facl')),
+  FALABELLA_HTTP_TIMEOUT_MS: envNum(z.coerce.number().int().positive().default(30000)),
 
-  STOCK_OFFSET: z.coerce.number().int().nonnegative().default(1),
-  STOCK_OFFSET_FALABELLA: z.coerce.number().int().nonnegative().optional(),
+  STOCK_OFFSET: envNum(z.coerce.number().int().nonnegative().default(1)),
+  STOCK_OFFSET_FALABELLA: envNum(z.coerce.number().int().nonnegative().optional()),
 
-  IDEMPOTENCY_STORE: z.enum(['memory', 'file']).default('memory'),
-  IDEMPOTENCY_FILE_DIR: z.string().optional(),
-  MELI_CACHE_DIR: z.string().optional(),
+  IDEMPOTENCY_STORE: envStr(z.enum(['memory', 'file']).default('memory')),
+  IDEMPOTENCY_FILE_DIR: envStr(z.string().optional()),
+  MELI_CACHE_DIR: envStr(z.string().optional()),
 
-  SYNC_ALL_SECRET: z.string().optional(),
-  SYNC_ALL_DELAY_MS: z.coerce.number().int().nonnegative().default(1200),
-  SYNC_ALL_SKU_LIST: z.string().optional(),
-  SYNC_ALL_SKU_PREFIX: z.string().optional(),
+  SYNC_ALL_SECRET: envStr(z.string().optional()),
+  SYNC_ALL_DELAY_MS: envNum(z.coerce.number().int().nonnegative().default(1200)),
+  SYNC_ALL_SKU_LIST: envStr(z.string().optional()),
+  SYNC_ALL_SKU_PREFIX: envStr(z.string().optional()),
 
-  PENDING_ORDERS_LAST_HOURS: z.coerce.number().int().positive().default(24),
+  // nonnegative para permitir 0 = skip catch-up de órdenes pendientes.
+  PENDING_ORDERS_LAST_HOURS: envNum(z.coerce.number().int().nonnegative().default(24)),
 
-  PRICE_MARKUP: z.coerce.number().positive().default(1.3),
-  PRICE_ROUND_ENDING: z.coerce.number().int().nonnegative().default(990),
+  PRICE_MARKUP: envNum(z.coerce.number().positive().default(1.3)),
+  PRICE_ROUND_ENDING: envNum(z.coerce.number().int().nonnegative().default(990)),
 });
 
 const parsed = schema.safeParse(process.env);
