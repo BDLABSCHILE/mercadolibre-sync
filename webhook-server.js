@@ -12,6 +12,9 @@ import { logger } from './src/logger.js';
 import { requestId } from './src/middleware/request-id.js';
 import { verifyShopifyHmac } from './src/middleware/verify-shopify-hmac.js';
 import adminSkusRouter from './src/routes/admin-skus.js';
+import * as skuCache from './src/services/sku-cache.js';
+import * as marketplaceOrdersRepo from './src/db/repositories/marketplace-orders.js';
+import * as locks from './src/db/repositories/sku-locks.js';
 
 // Obtener el directorio actual para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -339,22 +342,23 @@ app.use(express.json());
 app.use('/admin/skus', adminSkusRouter);
 
 /**
- * Procesa una orden de MercadoLibre: loop de items, resolver determinístico, descuento en Shopify, idempotencia.
- * Usado por el webhook real y por el endpoint de prueba interna.
+ * Procesa una orden de MercadoLibre: resolver SKU desde DB cache, descuento en
+ * Shopify con lock por SKU, idempotencia persistente en marketplace_orders +
+ * marketplace_order_items.
+ *
  * @param {object} order - Objeto orden (order_items, status, etc.)
- * @param {string} orderId - ID de la orden (para claves de idempotencia)
- * @param {{ dryRun?: boolean }} options - dryRun: si true, no llama a Shopify ni marca idempotencia (solo valida resolver)
- * @returns {Promise<{ success, order_id, status, items_processed, items_failed, total_items, fully_processed, results }>}
+ * @param {string} orderId - ID de la orden (para idempotencia)
+ * @param {{ dryRun?: boolean }} options - dryRun: solo valida resolver, no persiste ni toca Shopify
  */
 async function processMercadoLibreOrder(order, orderId, options = {}) {
   const dryRun = Boolean(options.dryRun);
-  const orderKey = `order:${orderId}`;
+  const platform = 'mercadolibre';
   let itemsProcessed = 0;
   let itemsFailed = 0;
   const results = [];
 
   if (!order.order_items || order.order_items.length === 0) {
-    console.log(`⚠️  Orden ${orderId} no tiene items`);
+    logger.warn({ orderId }, 'orden ML sin items');
     return {
       success: false,
       order_id: orderId,
@@ -363,94 +367,120 @@ async function processMercadoLibreOrder(order, orderId, options = {}) {
       items_failed: 0,
       total_items: 0,
       fully_processed: false,
-      results: []
+      results: [],
     };
   }
 
-  console.log(`   Items en la orden: ${order.order_items.length}\n`);
+  if (!dryRun) {
+    await marketplaceOrdersRepo.ensureOrder(platform, orderId, order);
+    await marketplaceOrdersRepo.setOrderStatus(platform, orderId, 'processing');
+  }
+
+  logger.info({ orderId, items: order.order_items.length }, 'procesando orden ML');
 
   for (const orderItem of order.order_items) {
     const { item, quantity } = orderItem;
-    const variation_id =
-      orderItem.variation_id ??
-      item?.variation_id ??
-      null;
+    const variation_id = orderItem.variation_id ?? item?.variation_id ?? null;
     const itemId = item?.id;
+    const itemKey = `item:${itemId}:${variation_id || 'NA'}`;
+    const baseRes = { itemId, variationId: variation_id };
 
     try {
-      console.log(`   📦 Procesando item ${itemId} (variation: ${variation_id ?? 'null'}, cantidad: ${quantity})`);
-
-      const itemKey = `order:${orderId}:item:${itemId}:${variation_id || 'NA'}`;
-      if (!dryRun && idempotency.mercadolibre.has(itemKey)) {
-        console.log(`      ⏭️  Item ya procesado previamente: ${itemKey}`);
+      if (!dryRun && await marketplaceOrdersRepo.hasItemProcessed(platform, orderId, itemKey)) {
+        logger.info({ orderId, itemKey }, 'item ya procesado, skip');
         itemsProcessed++;
-        results.push({ itemId, variationId: variation_id, status: 'skipped_already_processed' });
+        results.push({ ...baseRes, status: 'skipped_already_processed' });
         continue;
       }
 
-      let sku = null;
-      if (variation_id != null && variation_id !== '') {
-        sku = meliVariationIdToSku.get(String(variation_id)) ?? null;
-      } else {
-        const skusForItem = meliItemIdToSkus.get(itemId) || [];
-        if (skusForItem.length === 1) {
-          sku = skusForItem[0];
-        } else if (skusForItem.length > 1) {
-          console.log(`      ❌ item_id=${itemId} con variation_id=null tiene ${skusForItem.length} SKUs en el mapping (${skusForItem.join(', ')}). No se puede determinar cuál descontar; NO se descuenta stock.`);
-          itemsFailed++;
-          results.push({ itemId, variationId: variation_id, sku: null, status: 'ambiguous_item_no_variation' });
-          continue;
-        }
-      }
-
-      if (!sku || sku.trim() === '') {
-        console.log(`      ⚠️  SKU no encontrado para item ${itemId}, variación ${variation_id || 'N/A'}`);
+      const resolved = await skuCache.resolveFromMlOrderItem(itemId, variation_id);
+      if (resolved?.ambiguous) {
+        logger.warn(
+          { orderId, itemId, candidates: resolved.candidates },
+          'item_id sin variation tiene múltiples SKUs; ambiguous, NO descontar',
+        );
         itemsFailed++;
-        results.push({ itemId, variationId: variation_id, sku: null, status: 'sku_not_found' });
+        results.push({ ...baseRes, sku: null, status: 'ambiguous_item_no_variation' });
+        if (!dryRun) {
+          await marketplaceOrdersRepo.recordItem({
+            platform, orderId, itemKey, sku: null, quantity,
+            status: 'ambiguous_no_variation',
+            error: `multiple SKUs: ${resolved.candidates.join(', ')}`,
+          });
+        }
         continue;
       }
 
-      console.log(`      ✅ SKU resuelto: ${sku}`);
+      const sku = resolved?.sku;
+      if (!sku) {
+        logger.warn({ orderId, itemId, variation_id }, 'SKU no encontrado en mapping');
+        itemsFailed++;
+        results.push({ ...baseRes, sku: null, status: 'sku_not_found' });
+        if (!dryRun) {
+          await marketplaceOrdersRepo.recordItem({
+            platform, orderId, itemKey, sku: null, quantity,
+            status: 'sku_not_found',
+            error: `no mapping for itemId=${itemId}, variation_id=${variation_id}`,
+          });
+        }
+        continue;
+      }
+
+      logger.info({ orderId, itemId, sku, quantity }, 'SKU resuelto');
 
       if (dryRun) {
         itemsProcessed++;
-        results.push({ itemId, variationId: variation_id, sku, quantity, status: 'success_dry_run' });
+        results.push({ ...baseRes, sku, quantity, status: 'success_dry_run' });
         continue;
       }
 
-      const updated = await shopify.updateStockBySKU(sku, quantity);
-      if (updated) {
-        idempotency.mercadolibre.mark(itemKey);
-        const currentStock = await shopify.getStockBySKU(sku);
-        console.log(`      ✅ Stock actualizado en Shopify: ${sku} (cantidad descontada: ${quantity}, stock actual: ${currentStock})`);
-        itemsProcessed++;
-        results.push({ itemId, variationId: variation_id, sku, quantity, status: 'success', stockAfter: currentStock });
-      } else {
-        console.log(`      ❌ Error actualizando stock para SKU ${sku}`);
-        itemsFailed++;
-        results.push({ itemId, variationId: variation_id, sku, quantity, status: 'update_failed' });
-      }
-    } catch (error) {
-      console.error(`      ❌ Error procesando item ${itemId}:`, error.response?.data || error.message);
+      // Lock por SKU + descuento en Shopify. Serializa órdenes concurrentes del mismo SKU.
+      const stockAfter = await locks.withLock(sku, async () => {
+        const ok = await shopify.updateStockBySKU(sku, quantity);
+        if (!ok) throw new Error('shopify update failed');
+        return shopify.getStockBySKU(sku);
+      });
+
+      logger.info({ orderId, sku, quantity, stockAfter }, 'stock descontado en Shopify');
+      itemsProcessed++;
+      results.push({ ...baseRes, sku, quantity, status: 'success', stockAfter });
+
+      await marketplaceOrdersRepo.recordItem({
+        platform, orderId, itemKey, sku, quantity,
+        status: 'processed',
+        shopifyStockAfter: stockAfter,
+      });
+    } catch (err) {
+      logger.error({ orderId, itemId, err: err.message }, 'error procesando item ML');
       itemsFailed++;
-      results.push({ itemId, variationId: variation_id, status: 'error', error: error.message });
+      results.push({ ...baseRes, status: 'error', error: err.message });
+      if (!dryRun) {
+        await marketplaceOrdersRepo.recordItem({
+          platform, orderId, itemKey, sku: results[results.length - 1]?.sku, quantity,
+          status: 'failed',
+          error: err.message,
+        }).catch(() => {});
+      }
     }
   }
 
   const fullyProcessed = itemsFailed === 0 && itemsProcessed === order.order_items.length;
-  if (!dryRun && fullyProcessed) {
-    idempotency.mercadolibre.mark(orderKey);
-    console.log(`\n✅ Orden ${orderId} procesada completamente (${itemsProcessed}/${order.order_items.length} items)`);
-  } else if (!dryRun && itemsFailed > 0) {
-    console.log(`\n⚠️  Orden ${orderId} procesada PARCIALMENTE: ${itemsProcessed} exitosos, ${itemsFailed} fallidos`);
+  if (!dryRun) {
+    const finalStatus = fullyProcessed ? 'processed' : (itemsProcessed > 0 ? 'partial' : 'failed');
+    await marketplaceOrdersRepo.setOrderStatus(platform, orderId, finalStatus, {
+      processedItems: itemsProcessed,
+      failedItems: itemsFailed,
+    });
+    logger.info(
+      { orderId, processed: itemsProcessed, failed: itemsFailed, total: order.order_items.length, status: finalStatus },
+      'orden ML finalizada',
+    );
   }
 
-  console.log(`\n📊 Resumen: ${itemsProcessed} procesados, ${itemsFailed} fallidos, ${order.order_items.length} total`);
-
   if (!dryRun) {
-    const uniqueSkus = Array.from(new Set(results.map(r => r.sku).filter(Boolean)));
+    const uniqueSkus = [...new Set(results.map((r) => r.sku).filter(Boolean))];
     if (uniqueSkus.length > 0) {
-      console.log(`\n🔁 Redistribuyendo stock desde Shopify para ${uniqueSkus.length} SKU(s)...`);
+      logger.info({ count: uniqueSkus.length }, 'redistribuyendo stock a marketplaces');
       for (const sku of uniqueSkus) {
         const s = await shopify.getStockBySKU(sku);
         if (s === null) continue;
@@ -467,85 +497,114 @@ async function processMercadoLibreOrder(order, orderId, options = {}) {
     items_failed: itemsFailed,
     total_items: order.order_items.length,
     fully_processed: fullyProcessed,
-    results
+    results,
   };
 }
 
 /**
- * Procesa una orden de Falabella: obtiene items, descuenta en Shopify, redistribuye solo a Meli (no a Falabella para evitar loop).
+ * Procesa una orden de Falabella: descuento en Shopify con lock por SKU,
+ * idempotencia persistente en DB, redistribución solo a ML (no a Falabella para
+ * evitar loop con la plataforma de origen).
  */
 async function processFalabellaOrder(orderId, options = {}) {
   const dryRun = Boolean(options.dryRun);
-  const orderKey = `order:${orderId}`;
+  const platform = 'falabella';
 
   if (!falabella) {
-    console.log('⚠️  Falabella no inicializado, no se puede procesar orden');
+    logger.warn('Falabella no inicializado, no se puede procesar orden');
     return { success: false, order_id: orderId, items_processed: 0, items_failed: 0 };
-  }
-
-  if (!dryRun && idempotency.falabella.has(orderKey)) {
-    console.log(`⏭️  Orden Falabella ${orderId} ya procesada anteriormente`);
-    return { success: true, order_id: orderId, items_processed: 0, items_failed: 0, skipped: true };
   }
 
   let items;
   try {
     items = await falabella.getOrderItems(orderId);
-  } catch (e) {
-    console.error(`❌ Error obteniendo items de orden Falabella ${orderId}:`, e.message);
-    return { success: false, order_id: orderId, items_processed: 0, items_failed: 0, error: e.message };
+  } catch (err) {
+    logger.error({ orderId, err: err.message }, 'error obteniendo items de orden Falabella');
+    return { success: false, order_id: orderId, items_processed: 0, items_failed: 0, error: err.message };
   }
 
   if (!items || items.length === 0) {
-    console.log(`⚠️  Orden Falabella ${orderId} sin items o vacía`);
+    logger.warn({ orderId }, 'orden Falabella sin items');
     return { success: false, order_id: orderId, items_processed: 0, items_failed: 0 };
   }
 
-  console.log(`   Items en la orden Falabella: ${items.length}\n`);
+  if (!dryRun) {
+    await marketplaceOrdersRepo.ensureOrder(platform, orderId, { items });
+    await marketplaceOrdersRepo.setOrderStatus(platform, orderId, 'processing');
+  }
+
+  logger.info({ orderId, items: items.length }, 'procesando orden Falabella');
   let itemsProcessed = 0;
   let itemsFailed = 0;
   const results = [];
 
   for (const it of items) {
     const { sku, quantity, orderItemId } = it;
-    const itemKey = `order:${orderId}:item:${orderItemId || sku}-${quantity}`;
-    if (!dryRun && idempotency.falabella.has(itemKey)) {
-      itemsProcessed++;
-      continue;
-    }
+    const itemKey = `item:${orderItemId || sku}:${quantity}`;
+    const baseRes = { sku, quantity };
 
     try {
-      console.log(`   📦 Procesando ${sku} (cantidad: ${quantity})`);
+      if (!dryRun && await marketplaceOrdersRepo.hasItemProcessed(platform, orderId, itemKey)) {
+        logger.info({ orderId, sku, itemKey }, 'item Falabella ya procesado, skip');
+        itemsProcessed++;
+        continue;
+      }
+
+      if (!sku) {
+        logger.warn({ orderId, itemKey }, 'item Falabella sin SKU, skip');
+        itemsFailed++;
+        results.push({ ...baseRes, status: 'sku_not_found' });
+        if (!dryRun) {
+          await marketplaceOrdersRepo.recordItem({
+            platform, orderId, itemKey, sku: null, quantity, status: 'sku_not_found',
+            error: 'falabella item sin SKU',
+          });
+        }
+        continue;
+      }
+
       if (dryRun) {
         itemsProcessed++;
         continue;
       }
 
-      const updated = await shopify.updateStockBySKU(sku, quantity);
-      if (updated) {
-        idempotency.falabella.mark(itemKey);
-        const currentStock = await shopify.getStockBySKU(sku);
-        console.log(`      ✅ Stock actualizado en Shopify: ${sku} (descontado: ${quantity}, stock actual: ${currentStock})`);
-        itemsProcessed++;
-        results.push({ sku, quantity, status: 'success', stockAfter: currentStock });
-      } else {
-        itemsFailed++;
-        results.push({ sku, quantity, status: 'update_failed' });
-      }
-    } catch (e) {
-      console.error(`      ❌ Error procesando ${sku}:`, e.message);
+      const stockAfter = await locks.withLock(sku, async () => {
+        const ok = await shopify.updateStockBySKU(sku, quantity);
+        if (!ok) throw new Error('shopify update failed');
+        return shopify.getStockBySKU(sku);
+      });
+
+      logger.info({ orderId, sku, quantity, stockAfter }, 'stock descontado en Shopify');
+      itemsProcessed++;
+      results.push({ ...baseRes, status: 'success', stockAfter });
+
+      await marketplaceOrdersRepo.recordItem({
+        platform, orderId, itemKey, sku, quantity, status: 'processed', shopifyStockAfter: stockAfter,
+      });
+    } catch (err) {
+      logger.error({ orderId, sku, err: err.message }, 'error procesando item Falabella');
       itemsFailed++;
-      results.push({ sku, quantity, status: 'error', error: e.message });
+      results.push({ ...baseRes, status: 'error', error: err.message });
+      if (!dryRun) {
+        await marketplaceOrdersRepo.recordItem({
+          platform, orderId, itemKey, sku, quantity, status: 'failed', error: err.message,
+        }).catch(() => {});
+      }
     }
   }
 
-  if (!dryRun && itemsFailed === 0 && itemsProcessed === items.length) {
-    idempotency.falabella.mark(orderKey);
+  const fullyProcessed = itemsFailed === 0 && itemsProcessed === items.length;
+  if (!dryRun) {
+    const finalStatus = fullyProcessed ? 'processed' : (itemsProcessed > 0 ? 'partial' : 'failed');
+    await marketplaceOrdersRepo.setOrderStatus(platform, orderId, finalStatus, {
+      processedItems: itemsProcessed,
+      failedItems: itemsFailed,
+    });
   }
 
-  const uniqueSkus = Array.from(new Set(results.map(r => r.sku).filter(Boolean)));
+  const uniqueSkus = [...new Set(results.map((r) => r.sku).filter(Boolean))];
   if (!dryRun && uniqueSkus.length > 0) {
-    console.log(`\n🔁 Redistribuyendo stock a MercadoLibre (NO a Falabella para evitar loop)...`);
+    logger.info({ count: uniqueSkus.length }, 'redistribuyendo a ML (NO a Falabella para evitar loop)');
     for (const sku of uniqueSkus) {
       const s = await shopify.getStockBySKU(sku);
       if (s === null) continue;
@@ -559,7 +618,7 @@ async function processFalabellaOrder(orderId, options = {}) {
     items_processed: itemsProcessed,
     items_failed: itemsFailed,
     total_items: items.length,
-    results
+    results,
   };
 }
 
@@ -644,9 +703,9 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     }
 
     const orderId = orderIdMatch[1];
-    const orderKey = `order:${orderId}`;
-    if (idempotency.mercadolibre.has(orderKey)) {
-      console.log(`⏭️  [mercadolibre] Orden ${orderId} ya procesada anteriormente, ignorando`);
+    const existingOrder = await marketplaceOrdersRepo.findOrder('mercadolibre', orderId);
+    if (existingOrder && existingOrder.status === 'processed') {
+      logger.info({ orderId, processedAt: existingOrder.processedAt }, 'orden ML ya procesada, ignorando');
       return res.status(200).json({ message: 'Orden ya procesada', order_id: orderId });
     }
 
