@@ -122,3 +122,130 @@ export async function syncPriceForShopifyProduct(product, clients, opts = {}) {
   }
   return { product_id: product.id, product_title: product.title, results };
 }
+
+/**
+ * Barrido general de precios: recorre todos los productos Shopify y aplica la
+ * regla de markup a cada variant con SKU.
+ *
+ * @param {object} shopifyClient - instancia de ShopifyAPI
+ * @param {{ meli, falabella }} clients
+ * @param {{
+ *   dryRun?: boolean,            // true = NO escribe en marketplaces, solo reporta cálculos
+ *   skus?: string[],             // filtrar a estos SKUs (opcional)
+ *   skuPrefixes?: string[],      // filtrar por prefijos (opcional)
+ *   onlyWithMlMapping?: boolean, // default true: ignorar SKUs solo-Shopify
+ *   delayMs?: number,            // pausa entre SKUs (default 500ms)
+ *   reason?: string,
+ * }} opts
+ */
+export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}) {
+  const dryRun = Boolean(opts.dryRun);
+  const onlyWithMlMapping = opts.onlyWithMlMapping !== false;
+  const delayMs = opts.delayMs ?? 500;
+  const reason = opts.reason || 'sync_all_prices';
+  const skuFilter = (opts.skus || []).map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+  const prefixes = (opts.skuPrefixes || []).map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+
+  logger.info({ dryRun, onlyWithMlMapping, delayMs, skuFilterCount: skuFilter.length, prefixCount: prefixes.length }, 'sync-all-prices: inicio');
+
+  const products = await shopifyClient.getAllProducts();
+  logger.info({ products: products.length }, 'sync-all-prices: productos Shopify cargados');
+
+  const items = [];
+  for (const product of products) {
+    for (const v of product.variants || []) {
+      const sku = (v.sku || '').trim();
+      if (!sku) continue;
+      const upper = sku.toUpperCase();
+      if (skuFilter.length > 0 && !skuFilter.includes(upper)) continue;
+      if (prefixes.length > 0 && !prefixes.some((p) => upper.startsWith(p))) continue;
+      const priceNum = Number(v.price);
+      if (!Number.isFinite(priceNum) || priceNum <= 0) continue;
+      items.push({ sku, shopifyPrice: priceNum, productTitle: product.title, variantTitle: v.title });
+    }
+  }
+
+  logger.info({ items: items.length }, 'sync-all-prices: items con SKU+precio válido');
+
+  const summary = {
+    dryRun,
+    total: items.length,
+    updatedMl: 0,
+    unchangedMl: 0,
+    failedMl: 0,
+    skippedMl: 0,
+    updatedFb: 0,
+    unchangedFb: 0,
+    failedFb: 0,
+    skippedFb: 0,
+    skippedNoMapping: 0,
+    samples: [],
+  };
+
+  for (let i = 0; i < items.length; i++) {
+    const { sku, shopifyPrice, productTitle, variantTitle } = items[i];
+
+    if (dryRun) {
+      const target = priceForMarketplace(shopifyPrice);
+      const mapping = await skuCache.getBySku(sku);
+      const hasMl = Boolean(mapping?.mlItemId);
+      const hasFb = Boolean(mapping?.falabellaSellerSku);
+      const stateMl = mapping ? await platformState.get(sku, 'mercadolibre') : null;
+      const stateFb = mapping ? await platformState.get(sku, 'falabella') : null;
+      const willChangeMl = hasMl && !pricesEqual(stateMl?.price, target);
+      const willChangeFb = hasFb && !pricesEqual(stateFb?.price, target);
+      if (summary.samples.length < 20) {
+        summary.samples.push({
+          sku, productTitle, variantTitle, shopifyPrice, target,
+          ml: { mapped: hasMl, lastSynced: stateMl?.price ?? null, willChange: willChangeMl },
+          falabella: { mapped: hasFb, lastSynced: stateFb?.price ?? null, willChange: willChangeFb },
+        });
+      }
+      if (!mapping) summary.skippedNoMapping++;
+      if (hasMl) (willChangeMl ? summary.updatedMl++ : summary.unchangedMl++); else summary.skippedMl++;
+      if (hasFb) (willChangeFb ? summary.updatedFb++ : summary.unchangedFb++); else summary.skippedFb++;
+      continue;
+    }
+
+    // REAL sync (no dryRun)
+    try {
+      const mapping = await skuCache.getBySku(sku);
+      if (!mapping) {
+        summary.skippedNoMapping++;
+        continue;
+      }
+      if (onlyWithMlMapping && !mapping.mlItemId) {
+        summary.skippedMl++;
+        continue;
+      }
+      const r = await syncPriceForSku(sku, shopifyPrice, clients, { reason });
+      for (const res of r.results) {
+        if (res.marketplace === 'mercadolibre') {
+          if (res.ok && res.reason === 'unchanged') summary.unchangedMl++;
+          else if (res.ok) summary.updatedMl++;
+          else if (res.reason === 'no_ml_link') summary.skippedMl++;
+          else summary.failedMl++;
+        }
+        if (res.marketplace === 'falabella') {
+          if (res.ok && res.reason === 'unchanged') summary.unchangedFb++;
+          else if (res.ok) summary.updatedFb++;
+          else summary.failedFb++;
+        }
+      }
+    } catch (err) {
+      logger.error({ sku, err: err.message }, 'sync-all-prices: error en SKU');
+      summary.failedMl++;
+      summary.failedFb++;
+    }
+
+    if ((i + 1) % 25 === 0) {
+      logger.info({ progress: `${i + 1}/${items.length}`, sku }, 'sync-all-prices: progreso');
+    }
+    if (delayMs > 0 && i < items.length - 1) {
+      await new Promise((res) => setTimeout(res, delayMs));
+    }
+  }
+
+  logger.info(summary, 'sync-all-prices: resumen');
+  return summary;
+}

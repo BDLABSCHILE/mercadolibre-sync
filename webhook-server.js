@@ -16,7 +16,7 @@ import * as skuCache from './src/services/sku-cache.js';
 import * as marketplaceOrdersRepo from './src/db/repositories/marketplace-orders.js';
 import * as locks from './src/db/repositories/sku-locks.js';
 import * as webhookEvents from './src/db/repositories/webhook-events.js';
-import { syncPriceForShopifyProduct, syncPriceForSku } from './src/services/price-sync.js';
+import { syncPriceForShopifyProduct, syncPriceForSku, syncAllPricesFromShopify } from './src/services/price-sync.js';
 import { adminAuth } from './src/middleware/admin-auth.js';
 import crypto from 'crypto';
 
@@ -450,6 +450,55 @@ app.post('/admin/sync-price', adminAuth, async (req, res) => {
     logger.error({ err: err.message }, 'POST /admin/sync-price failed');
     return res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * POST /admin/sync-all-prices
+ *   Body opcional: {
+ *     dry_run?: boolean,    // true = NO escribe en marketplaces, solo simula
+ *     skus?: string[],      // limitar a estos SKUs (ej. ["B-M-NE","B-M-CRU"])
+ *     prefixes?: string[],  // limitar por prefijos (ej. ["B-M-","T-M-"])
+ *     delay_ms?: number,    // pausa entre SKUs (default 500)
+ *   }
+ * Si dry_run=true responde 200 con el resumen (sincrónico, espera).
+ * Si dry_run=false responde 202 y corre en background (los logs son la fuente
+ * de verdad del progreso).
+ */
+app.post('/admin/sync-all-prices', adminAuth, async (req, res) => {
+  const body = req.body || {};
+  const dryRun = Boolean(body.dry_run);
+  const skus = Array.isArray(body.skus) ? body.skus : undefined;
+  const prefixes = Array.isArray(body.prefixes) ? body.prefixes : undefined;
+  const delayMs = Number.isFinite(body.delay_ms) ? body.delay_ms : 500;
+
+  if (dryRun) {
+    try {
+      const summary = await syncAllPricesFromShopify(shopify, { meli, falabella }, {
+        dryRun: true, skus, skuPrefixes: prefixes, delayMs: 0, reason: 'admin_dry_run',
+      });
+      return res.json(summary);
+    } catch (err) {
+      logger.error({ err: err.message }, 'sync-all-prices dry-run failed');
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // No dry-run: background.
+  res.status(202).json({
+    message: 'Sync de precios iniciado en background. Revisa los logs.',
+    filter: { skus, prefixes, delayMs },
+  });
+
+  (async () => {
+    try {
+      const summary = await syncAllPricesFromShopify(shopify, { meli, falabella }, {
+        dryRun: false, skus, skuPrefixes: prefixes, delayMs, reason: 'admin_bulk_sync',
+      });
+      logger.info(summary, 'sync-all-prices completado');
+    } catch (err) {
+      logger.error({ err: err.message, stack: err.stack }, 'sync-all-prices background error');
+    }
+  })();
 });
 
 /**
