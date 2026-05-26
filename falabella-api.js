@@ -295,20 +295,50 @@ export default class FalabellaAPI {
   }
 
   /**
-   * Actualiza stock por SKU usando ProductUpdate (Seller Center API)
-   * @param {string} sku - SellerSku del producto
-   * @param {number} quantity - Cantidad en stock
-   * @returns {Promise<{rawXml: string, requested: {sku: string, quantity: number}}>}
+   * Actualiza stock por SKU usando ProductUpdate (Seller Center API).
    */
   async updateStockBySKU(sku, quantity) {
+    return this._productUpdate(sku, { stock: quantity });
+  }
+
+  /**
+   * Actualiza precio por SKU usando ProductUpdate.
+   */
+  async updatePriceBySKU(sku, price) {
+    return this._productUpdate(sku, { price });
+  }
+
+  /**
+   * Actualiza stock y precio en una sola llamada.
+   */
+  async updateStockAndPriceBySKU(sku, quantity, price) {
+    return this._productUpdate(sku, { stock: quantity, price });
+  }
+
+  /**
+   * Internal: construye y envía ProductUpdate XML con stock y/o price opcionales.
+   * @param {string} sku
+   * @param {{stock?: number, price?: number}} fields
+   */
+  async _productUpdate(sku, { stock, price } = {}) {
     if (!this.enabled) {
       this._notEnabled();
     }
-
-    const q = Math.max(0, Math.floor(Number(quantity) || 0));
     const safeSku = String(sku).trim();
-    if (!safeSku) {
-      throw new Error('SKU vacío o inválido');
+    if (!safeSku) throw new Error('SKU vacío o inválido');
+
+    const lines = [];
+    if (stock != null) {
+      const q = Math.max(0, Math.floor(Number(stock) || 0));
+      lines.push(`        <Stock>${q}</Stock>`);
+    }
+    if (price != null) {
+      const p = Number(price);
+      if (!Number.isFinite(p) || p <= 0) throw new Error(`Falabella precio inválido: ${price}`);
+      lines.push(`        <Price>${p}</Price>`);
+    }
+    if (lines.length === 0) {
+      throw new Error('_productUpdate: nada que actualizar (stock y price ambos null)');
     }
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -318,25 +348,17 @@ export default class FalabellaAPI {
     <BusinessUnits>
       <BusinessUnit>
         <OperatorCode>${this.operatorCode}</OperatorCode>
-        <Stock>${q}</Stock>
+${lines.join('\n')}
       </BusinessUnit>
     </BusinessUnits>
   </Product>
 </Request>`;
 
-    console.log(`📤 ProductUpdate SKU=${safeSku} qty=${q}`);
-    console.log('📤 XML enviado:', xml.trim());
-
+    console.log(`📤 ProductUpdate SKU=${safeSku} stock=${stock ?? '-'} price=${price ?? '-'}`);
     const res = await this._postWithResponse('ProductUpdate', xml);
-    const status = res.status;
-    const body = res.data;
-
-    console.log('📥 Status HTTP:', status);
-    console.log('📥 Body de respuesta (resumido):', this._summarizeBody(body));
-
-    assertNoErrorResponse(body);
+    assertNoErrorResponse(res.data);
     console.log('✅ Falabella actualizado correctamente');
 
-    return { rawXml: String(body || ''), requested: { sku: safeSku, quantity: q } };
+    return { rawXml: String(res.data || ''), requested: { sku: safeSku, stock, price } };
   }
 }
