@@ -16,6 +16,8 @@ import * as skuCache from './src/services/sku-cache.js';
 import * as marketplaceOrdersRepo from './src/db/repositories/marketplace-orders.js';
 import * as locks from './src/db/repositories/sku-locks.js';
 import * as webhookEvents from './src/db/repositories/webhook-events.js';
+import { syncPriceForShopifyProduct, syncPriceForSku } from './src/services/price-sync.js';
+import { adminAuth } from './src/middleware/admin-auth.js';
 import crypto from 'crypto';
 
 // Obtener el directorio actual para ES modules
@@ -375,11 +377,80 @@ app.post('/webhook/inventory', shopifyRawParser, verifyShopifyHmac, async (req, 
   }
 });
 
+/**
+ * POST /webhooks/shopify/products/update
+ * Webhook products/update de Shopify. Sincroniza precios de cada variant del
+ * producto a ML y Falabella aplicando markup * 1.3 redondeado a 990.
+ */
+app.post('/webhooks/shopify/products/update', shopifyRawParser, verifyShopifyHmac, async (req, res) => {
+  const deliveryId = deliveryIdShopify(req);
+  try {
+    const body = parseRawBodySafe(req.body);
+    if (!body) {
+      logger.warn({ deliveryId }, 'webhook products/update body vacío/inválido');
+      return res.status(400).json({ error: 'Body vacío o JSON inválido' });
+    }
+    const rec = await webhookEvents.record({
+      deliveryId, source: 'shopify', topic: 'products/update', payload: body,
+    });
+    if (!rec.isNew) {
+      logger.info({ deliveryId, status: rec.status }, 'webhook products/update duplicado, ignorando');
+      return res.status(200).json({ message: 'duplicado', delivery_id: deliveryId, prev_status: rec.status });
+    }
+    logger.info({ deliveryId, productId: body.id, variants: body.variants?.length }, 'webhook products/update');
+
+    const out = await syncPriceForShopifyProduct(body, { meli, falabella }, { reason: 'shopify_products_update' });
+    await webhookEvents.markProcessed(deliveryId);
+
+    const summary = {
+      product_id: out.product_id,
+      product_title: out.product_title,
+      variants_processed: out.results.length,
+      variants_changed: out.results.filter((r) =>
+        r.results.some((m) => m.ok && m.reason !== 'unchanged'),
+      ).length,
+      variants_unchanged: out.results.filter((r) =>
+        r.results.every((m) => !m.ok || m.reason === 'unchanged'),
+      ).length,
+    };
+    logger.info(summary, 'products/update procesado');
+    return res.status(200).json({ ok: true, ...summary });
+  } catch (error) {
+    logger.error({ deliveryId, err: error.message, stack: error.stack }, 'error webhook products/update');
+    await webhookEvents.markFailed(deliveryId, error.message).catch(() => {});
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 // ========== JSON para el resto de rutas (MercadoLibre, etc.) ==========
 app.use(express.json());
 
 // Endpoints administrativos (mapping SKU, etc.). Auth con SYNC_ALL_SECRET.
 app.use('/admin/skus', adminSkusRouter);
+
+/**
+ * POST /admin/sync-price
+ *   Body: { sku, shopifyPrice, force? }
+ * Forzar sync de precio para un SKU sin esperar webhook.
+ */
+app.post('/admin/sync-price', adminAuth, async (req, res) => {
+  try {
+    const { sku, shopifyPrice, force } = req.body || {};
+    if (!sku) return res.status(400).json({ error: 'sku requerido' });
+    const price = Number(shopifyPrice);
+    if (!Number.isFinite(price) || price <= 0) {
+      return res.status(400).json({ error: 'shopifyPrice debe ser un número positivo' });
+    }
+    const out = await syncPriceForSku(String(sku).trim(), price, { meli, falabella }, {
+      reason: 'admin_manual',
+      force: Boolean(force),
+    });
+    return res.json(out);
+  } catch (err) {
+    logger.error({ err: err.message }, 'POST /admin/sync-price failed');
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 /**
  * Procesa una orden de MercadoLibre: resolver SKU desde DB cache, descuento en
