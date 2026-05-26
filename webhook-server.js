@@ -2,20 +2,22 @@ import express from 'express';
 import ShopifyAPI from './shopify-api.js';
 import MercadoLibreAPI from './mercadolibre-api.js';
 import FalabellaAPI from './falabella-api.js';
-import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createIdempotencyStore } from './idempotency-store.js';
 import { meliVariationIdToSku, meliItemIdToSkus } from './meli-sku-mapping.js';
-
-dotenv.config();
+import { config } from './src/config.js';
+import { logger } from './src/logger.js';
+import { requestId } from './src/middleware/request-id.js';
+import { verifyShopifyHmac } from './src/middleware/verify-shopify-hmac.js';
 
 // Obtener el directorio actual para ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(requestId);
 
 // IMPORTANTE: NO usar express.json() aquí. Los webhooks de Shopify requieren body RAW
 // para HMAC y para evitar "Unexpected token 'n', 'null' is not valid JSON".
@@ -181,7 +183,7 @@ const shopifyRawParser = express.raw({ type: 'application/json', limit: '1mb' })
  * Webhook orders/create de Shopify. URL exacta usada en producción (Render).
  * Body RAW: NO express.json (rompe HMAC y genera "null is not valid JSON").
  */
-app.post('/webhooks/shopify/orders/create', shopifyRawParser, async (req, res) => {
+app.post('/webhooks/shopify/orders/create', shopifyRawParser, verifyShopifyHmac, async (req, res) => {
   try {
     console.log('\n🔥 WEBHOOK SHOPIFY RECIBIDO → /webhooks/shopify/orders/create');
     const body = parseRawBodySafe(req.body);
@@ -248,7 +250,7 @@ app.post('/webhooks/shopify/orders/create', shopifyRawParser, async (req, res) =
  * POST /webhook/inventory
  * Evento: Inventory levels update. También usa body RAW.
  */
-app.post('/webhook/inventory', shopifyRawParser, async (req, res) => {
+app.post('/webhook/inventory', shopifyRawParser, verifyShopifyHmac, async (req, res) => {
   try {
     console.log('\n🔥 WEBHOOK SHOPIFY RECIBIDO → /webhook/inventory');
     const body = parseRawBodySafe(req.body);
@@ -1070,26 +1072,23 @@ function handleSyncAll(req, res) {
 app.get('/sync-all', handleSyncAll);
 app.post('/sync-all', handleSyncAll);
 
-const PORT = process.env.PORT || 3000;
+const PORT = config.PORT;
 
 app.listen(PORT, async () => {
-  console.log(`🚀 Servidor de webhooks iniciado en puerto ${PORT}`);
-  console.log(`📡 Shopify orders/create: http://localhost:${PORT}/webhooks/shopify/orders/create`);
-  console.log(`📡 Shopify inventory:      http://localhost:${PORT}/webhook/inventory`);
-  console.log(`📡 MercadoLibre order:      http://localhost:${PORT}/webhooks/mercadolibre/order`);
-  console.log(`📡 Falabella order:         http://localhost:${PORT}/webhooks/falabella/order`);
-  console.log(`💚 Health:                  http://localhost:${PORT}/health`);
-  console.log(`🧪 Test sync:               http://localhost:${PORT}/test-sync?sku=B-M-CRU`);
-  console.log(`🔄 Sync general:             http://localhost:${PORT}/sync-all?key=SYNC_ALL_SECRET`);
-  console.log(`\n🔍 Verificando órdenes pendientes de MercadoLibre...`);
-  
-  // Verificar órdenes pendientes al iniciar (solo una vez, en background)
-  // Usar import dinámico para evitar problemas de dependencias circulares
-  import('./check-pending-orders.js').then(module => {
-    module.default().catch(err => {
-      console.error('⚠️  Error verificando órdenes pendientes:', err.message);
-    });
-  }).catch(err => {
-    console.warn('⚠️  No se pudo cargar check-pending-orders:', err.message);
-  });
+  logger.info(
+    {
+      port: PORT,
+      env: config.NODE_ENV,
+      falabella_enabled: Boolean(falabella),
+      hmac_verification: Boolean(config.SHOPIFY_API_SECRET),
+      database_url_configured: Boolean(config.DATABASE_URL),
+      idempotency_store: config.IDEMPOTENCY_STORE,
+    },
+    'servidor iniciado',
+  );
+
+  // Verificar órdenes pendientes al arrancar (catch-up de ML, una sola vez).
+  import('./check-pending-orders.js')
+    .then((module) => module.default())
+    .catch((err) => logger.warn({ err: err.message }, 'check-pending-orders falló'));
 });

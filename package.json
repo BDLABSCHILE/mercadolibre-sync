@@ -5,11 +5,15 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
+    "start": "node webhook-server.js",
     "sync": "node index.js",
-    "dev": "node --watch index.js",
+    "dev": "node --watch webhook-server.js",
     "webhook": "node webhook-server.js",
-    "check-orders": "node check-pending-orders.js"
+    "check-orders": "node check-pending-orders.js",
+    "migrate": "node src/db/migrate.js"
+  },
+  "engines": {
+    "node": ">=18.17.0"
   },
   "keywords": [
     "shopify",
@@ -23,6 +27,10 @@
     "axios": "^1.6.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "fast-xml-parser": "^4.3.2"
+    "fast-xml-parser": "^4.3.2",
+    "pg": "^8.13.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "zod": "^3.23.8"
   }
 }
