@@ -177,6 +177,98 @@ export default class FalabellaAPI {
   }
 
   /**
+   * Obtiene listado de órdenes (GetOrders)
+   * Rango fijo: últimos 30 días. Sin filtro Status.
+   * @param {Object} options - Opciones de filtrado
+   * @param {number} options.limit - Límite (default 100)
+   * @param {number} options.offset - Offset para paginación
+   * @returns {Promise<Array<{id: string, total: number, created_at: string, status: string}>>}
+   */
+  async getOrders(options = {}) {
+    if (!this.enabled) return [];
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const from = thirtyDaysAgo.toISOString().slice(0, 19) + '+00:00';
+    const to = now.toISOString().slice(0, 19) + '+00:00';
+
+    console.log(`   [Falabella] CreatedAfter=${from}`);
+    console.log(`   [Falabella] CreatedBefore=${to}`);
+
+    const extraParams = {
+      Format: 'JSON',
+      Version: '1.0',
+      Limit: options.limit || 100,
+      Offset: options.offset || 0,
+      CreatedAfter: from,
+      CreatedBefore: to,
+    };
+    // NO Status parameter
+
+    const raw = await this.call('GetOrders', extraParams, { method: 'GET' });
+    if (process.env.DEBUG_FALABELLA === '1') {
+      console.log('   [DEBUG] Falabella GetOrders respuesta:', String(raw).slice(0, 1200));
+    }
+    let data = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+    if (!data && typeof raw === 'string' && (raw.trim().startsWith('<?xml') || raw.trim().startsWith('<'))) {
+      try {
+        const { XMLParser } = await import('fast-xml-parser');
+        const parser = new XMLParser({ ignoreAttributes: false });
+        data = parser.parse(raw);
+      } catch (e) {
+        console.warn('   Falabella: no se pudo parsear respuesta como JSON ni XML');
+      }
+    }
+    if (!data) {
+      throw new Error('Falabella API: no se pudo parsear respuesta como JSON ni XML');
+    }
+
+    if (data.ErrorResponse) {
+      const head = data.ErrorResponse.Head ?? data.ErrorResponse;
+      const body = data.ErrorResponse.Body ?? data.ErrorResponse;
+      const err = body?.Error ?? head;
+      const code = err?.Code ?? err?.ErrorCode ?? head?.ErrorCode ?? 'unknown';
+      const msg = err?.Message ?? err?.ErrorMessage ?? head?.ErrorMessage ?? JSON.stringify(data.ErrorResponse);
+      console.error(`   [Falabella] ErrorResponse: ErrorCode=${code}, ErrorMessage=${msg}`);
+      throw new Error(`Falabella API Error: ${code} - ${msg}`);
+    }
+
+    const totalCount = data.Head?.TotalCount ?? data.SuccessResponse?.Head?.TotalCount ?? data.TotalCount;
+    if (totalCount !== undefined && totalCount !== null) {
+      console.log(`   [Falabella] TotalCount=${totalCount}`);
+    }
+
+    const body = data.SuccessResponse?.Body ?? data.Body;
+    let ordersData = body?.Orders?.Order ?? body?.Orders;
+    if (ordersData === '' || ordersData == null) ordersData = [];
+    const arr = Array.isArray(ordersData) ? ordersData : [ordersData];
+    if (process.env.DEBUG_FALABELLA === '1') {
+      console.log('   [DEBUG] ordersData type:', typeof ordersData, 'arr.length:', arr.length, 'data keys:', Object.keys(data));
+    }
+    if (arr.length === 0 && (data.Head?.TotalCount ?? data.TotalCount ?? 0) > 0) {
+      console.warn('   Falabella: TotalCount=', data.Head?.TotalCount ?? data.TotalCount, 'pero estructura diferente. Keys:', JSON.stringify(Object.keys(data)));
+    }
+    const result = [];
+
+    for (const o of arr) {
+      if (!o) continue;
+      const price = parseFloat(o.Price ?? o.price ?? 0);
+      const createdAt = o.CreatedAt ?? o.created_at ?? o.UpdatedAt ?? o.updated_at ?? new Date().toISOString();
+      const statuses = o.Statuses?.Status ?? o.Statuses ?? o.status ?? [];
+      const status = Array.isArray(statuses) ? statuses[0] : statuses;
+      result.push({
+        id: String(o.OrderId ?? o.OrderNumber ?? o.order_id ?? ''),
+        total: price,
+        currency: 'CLP',
+        created_at: createdAt,
+        status: status || 'unknown',
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Obtiene los items de una orden (GetOrderItems).
    * @param {string|number} orderId - ID de la orden
    * @returns {Promise<Array<{sku: string, quantity: number}>>}

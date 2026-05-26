@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { resolveSkuFromOrderItem } from './meli-sku-mapping.js';
 
 dotenv.config();
 
@@ -16,8 +17,10 @@ if (!MELI_USER_ID) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Archivo de persistencia para items refrescados
-const REFRESHED_ITEMS_FILE = path.join(__dirname, '.meli-refreshed-items.json');
+// Archivo de persistencia para items refrescados (usa dir escribible en Docker :ro)
+const REFRESHED_ITEMS_FILE = process.env.MELI_CACHE_DIR
+  ? path.join(process.env.MELI_CACHE_DIR, '.meli-refreshed-items.json')
+  : path.join(__dirname, '.meli-refreshed-items.json');
 
 class MercadoLibreAPI {
   constructor() {
@@ -321,6 +324,559 @@ class MercadoLibreAPI {
     })();
 
     return this.refreshPromise;
+  }
+
+  /**
+   * Obtiene órdenes/ventas del vendedor
+   * @param {Object} options - Opciones de filtrado
+   * @param {string} options.createdFrom - Fecha desde (ISO 8601)
+   * @param {string} options.createdTo - Fecha hasta (ISO 8601)
+   * @param {number} options.limit - Límite por página (default 50)
+   * @returns {Promise<Array<{id: string, total: number, created_at: string, status: string}>>}
+   */
+  async getOrders(options = {}) {
+    try {
+      // Usar /orders/search (API clásica). Límite máx 50 por request.
+      const limit = Math.min(options.limit || 50, 50);
+      const params = {
+        seller: MELI_USER_ID,
+        limit,
+      };
+      if (options.createdFrom) params['order.date_created.from'] = options.createdFrom;
+      if (options.createdTo) params['order.date_created.to'] = options.createdTo;
+
+      const allResults = [];
+      let offset = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        params.offset = offset;
+        const response = await this.client.get('/orders/search', { params });
+        if (process.env.DEBUG_ML === '1' && response?.data?.results?.length > 0 && offset === 0) {
+          console.log('[DEBUG RAW ML ORDER SAMPLE]');
+          const sample = response.data.results.slice(0, 5);
+          for (const o of sample) {
+            console.log({
+              id: o.id,
+              pack_id: o.pack_id,
+              order_items_count: o.order_items?.length,
+              total_paid_amount: o.total_paid_amount,
+            });
+          }
+        }
+        const results = response.data.results || [];
+        allResults.push(...results);
+        const total = response.data.paging?.total ?? results.length;
+        hasMore = results.length === limit && offset + results.length < total;
+        offset += results.length;
+      }
+
+      if (process.env.DEBUG_ML === '1') {
+        const targetOrder =
+          allResults.find((o) => o.id == 2000011558256539) ||
+          allResults.find((o) => o.pack_id == 2000011558256539);
+        if (targetOrder) {
+          console.log(JSON.stringify(targetOrder, null, 2));
+          process.exit(0);
+        }
+      }
+
+      const results = allResults;
+      const groupMap = new Map();
+      const shipmentCache = new Map();
+      const shipmentCostAddedPerGroup = new Map();
+      const paymentCache = new Map();
+
+      await this.ensureValidToken();
+
+      for (const order of results) {
+        const groupKey = order.pack_id || order.id;
+
+        // Resolver SKU por item (para fact_order_items) y del primer item (para fact_orders.sku legacy)
+        let sku = null;
+        const itemsMap = new Map(); // sku -> { quantity, line_total }
+        if (order.order_items?.length) {
+          for (const oi of order.order_items) {
+            const item = oi?.item;
+            const variationId = oi?.variation_id ?? item?.variation_id ?? null;
+            const itemId = item?.id ?? null;
+            let itemSku = null;
+            const resolved = resolveSkuFromOrderItem(itemId ? String(itemId) : null, variationId);
+            if (resolved.ambiguous) continue; // item con múltiples SKUs sin variation_id: omitir
+            if (resolved.sku) itemSku = resolved.sku;
+            else itemSku = item?.seller_custom_field || item?.sku || oi?.seller_custom_field || oi?.seller_sku || null;
+            if (!itemSku || String(itemSku).trim() === '') continue;
+            const qty = parseInt(oi.quantity || 1, 10) || 1;
+            const unitPrice = parseFloat(oi.unit_price || 0);
+            const lineTotal = unitPrice * qty;
+            const existing = itemsMap.get(itemSku);
+            if (existing) {
+              existing.quantity += qty;
+              existing.line_total += lineTotal;
+              existing.unit_price = existing.quantity > 0 ? existing.line_total / existing.quantity : existing.unit_price;
+            } else {
+              itemsMap.set(itemSku, { quantity: qty, unit_price: unitPrice, line_total: lineTotal });
+            }
+          }
+          // SKU del primer item (compatibilidad con fact_orders.sku)
+          const firstOi = order.order_items[0];
+          const firstItem = firstOi?.item;
+          sku = firstItem?.seller_custom_field || firstItem?.sku || firstOi?.seller_custom_field || firstOi?.seller_sku || firstItem?.id || null;
+          if (!sku && itemsMap.size > 0) sku = itemsMap.keys().next().value;
+        }
+        if (process.env.DEBUG_ML_SKU === '1') {
+          console.log('[ML SKU]', order.id, sku, 'items:', [...itemsMap.entries()]);
+        }
+
+        const total = parseFloat(order.paid_amount ?? order.total_amount ?? 0) ||
+          (order.payments?.reduce((sum, p) => sum + parseFloat(p.transaction_amount || p.total_paid_amount || 0), 0) ?? 0);
+
+        let totalProducto = 0;
+        if (order.order_items?.length) {
+          for (const it of order.order_items) {
+            const qty = parseInt(it.quantity || 1, 10) || 1;
+            totalProducto += parseFloat(it.unit_price || 0) * qty;
+          }
+        }
+
+        let totalPaidAmount = 0;
+        let netReceivedAmount = 0;
+        let commissionTotal = 0;
+        let commissionSale = 0;
+        let commissionShipping = 0;
+        let commissionFinancing = 0;
+        let couponAmount = 0;
+        let shippingIncome = 0;
+        let shippingCost = 0;
+        if (order.payments?.length) {
+          for (const p of order.payments) {
+            couponAmount += parseFloat(p.coupon_amount || 0);
+            if (p.operation_type === 'payment_addition') {
+              shippingIncome += parseFloat(p.total_paid_amount || 0);
+            } else {
+              shippingIncome += parseFloat(p.shipping_amount || 0);
+            }
+
+            const paymentId = p.id;
+            if (paymentId != null) {
+              let cached = paymentCache.get(paymentId);
+              if (!cached) {
+                try {
+                  const mpRes = await axios.get(
+                    `https://api.mercadopago.com/v1/payments/${paymentId}`,
+                    {
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${this.accessToken}`,
+                      },
+                    }
+                  );
+                  const mpPayment = mpRes?.data;
+                  const td = mpPayment?.transaction_details || {};
+                  const totalPaid = parseFloat(td.total_paid_amount || 0);
+                  const netReceived = parseFloat(td.net_received_amount || 0);
+                  const feeTotal = totalPaid - netReceived;
+
+                  let sale = 0;
+                  let ship = 0;
+                  let fin = 0;
+                  if (Array.isArray(mpPayment?.fee_details)) {
+                    for (const fee of mpPayment.fee_details) {
+                      const amt = parseFloat(fee.amount || 0);
+                      const type = String(fee.type || '').toLowerCase();
+                      const desc = String(fee.description || '').toLowerCase();
+                      if (type.includes('shipping') || desc.includes('env')) {
+                        ship += amt;
+                      } else if (type.includes('financing') || type.includes('installment') || desc.includes('financ')) {
+                        fin += amt;
+                      } else {
+                        sale += amt;
+                      }
+                    }
+                    const sumBreakdown = sale + ship + fin;
+                    if (Math.abs(sumBreakdown - feeTotal) > 0.01) {
+                      sale += feeTotal - sumBreakdown;
+                    }
+                  } else {
+                    sale = feeTotal;
+                  }
+                  cached = {
+                    totalPaid,
+                    netReceived,
+                    commissionTotal: feeTotal,
+                    commissionSale: sale,
+                    commissionShipping: ship,
+                    commissionFinancing: fin,
+                  };
+                  paymentCache.set(paymentId, cached);
+                } catch (err) {
+                  cached = {
+                    totalPaid: parseFloat(p.total_paid_amount || 0),
+                    netReceived: parseFloat(p.total_paid_amount || 0),
+                    commissionTotal: 0,
+                    commissionSale: 0,
+                    commissionShipping: 0,
+                    commissionFinancing: 0,
+                  };
+                  paymentCache.set(paymentId, cached);
+                }
+              }
+              totalPaidAmount += cached.totalPaid;
+              netReceivedAmount += cached.netReceived;
+              commissionTotal += cached.commissionTotal;
+              commissionSale += cached.commissionSale;
+              commissionShipping += cached.commissionShipping;
+              commissionFinancing += cached.commissionFinancing;
+            } else {
+              const fallback = parseFloat(p.total_paid_amount || 0);
+              totalPaidAmount += fallback;
+              netReceivedAmount += fallback;
+            }
+          }
+        }
+        if (shippingIncome === 0 && totalPaidAmount > totalProducto) {
+          shippingIncome = totalPaidAmount - totalProducto;
+        }
+        shippingIncome = Math.max(0, shippingIncome);
+
+        if (order.shipping?.id != null) {
+          const shipId = order.shipping.id;
+          let sellerCost = 0;
+          if (shipmentCache.has(shipId)) {
+            sellerCost = shipmentCache.get(shipId);
+          } else {
+            try {
+              const costsRes = await this.client.get(`/shipments/${shipId}/costs`);
+              sellerCost = parseFloat(costsRes?.data?.senders?.[0]?.cost) || 0;
+              if (sellerCost === 0) {
+                const shipRes = await this.client.get(`/shipments/${shipId}`);
+                const shipment = shipRes?.data;
+                sellerCost = parseFloat(shipment?.cost_components?.ratio) || 0;
+              }
+              shipmentCache.set(shipId, sellerCost);
+            } catch (err) {
+              shipmentCache.set(shipId, 0);
+            }
+          }
+          if (!shipmentCostAddedPerGroup.has(groupKey)) {
+            shipmentCostAddedPerGroup.set(groupKey, new Set());
+          }
+          if (!shipmentCostAddedPerGroup.get(groupKey).has(shipId)) {
+            shippingCost += sellerCost;
+            shipmentCostAddedPerGroup.get(groupKey).add(shipId);
+          }
+        }
+
+        if (totalPaidAmount === 0) totalPaidAmount = total;
+
+        const grossSales = totalProducto;
+
+        if (groupMap.has(groupKey)) {
+          const agg = groupMap.get(groupKey);
+          if (agg.sku == null && sku != null) agg.sku = sku;
+          agg.total += total;
+          agg.total_paid_amount += totalPaidAmount;
+          agg.net_received_amount += netReceivedAmount;
+          agg.commission_total += commissionTotal;
+          agg.commission_sale += commissionSale;
+          agg.commission_shipping += commissionShipping;
+          agg.commission_financing += commissionFinancing;
+          agg.shipping_income += shippingIncome;
+          agg.shipping_cost += shippingCost;
+          agg.coupon_amount += couponAmount;
+          agg.gross_sales += grossSales;
+          for (const [itemSku, data] of itemsMap) {
+            const existing = agg.itemsMap.get(itemSku);
+            if (existing) {
+              existing.quantity += data.quantity;
+              existing.line_total += data.line_total;
+              existing.unit_price = existing.quantity > 0 ? existing.line_total / existing.quantity : existing.unit_price;
+            } else {
+              agg.itemsMap.set(itemSku, { quantity: data.quantity, unit_price: data.unit_price, line_total: data.line_total });
+            }
+          }
+          const orderDate = order.date_created || order.date_closed || order.date_last_updated;
+          if (orderDate && (!agg.created_at || orderDate < agg.created_at)) {
+            agg.created_at = orderDate;
+          }
+        } else {
+          groupMap.set(groupKey, {
+            total,
+            currency: order.currency_id || 'CLP',
+            created_at: order.date_created || order.date_closed || order.date_last_updated,
+            status: order.status || 'unknown',
+            total_paid_amount: totalPaidAmount,
+            net_received_amount: netReceivedAmount,
+            commission_total: commissionTotal,
+            commission_sale: commissionSale,
+            commission_shipping: commissionShipping,
+            commission_financing: commissionFinancing,
+            gross_sales: grossSales,
+            shipping_income: shippingIncome,
+            shipping_cost: shippingCost,
+            coupon_amount: couponAmount,
+            sku,
+            itemsMap: new Map(itemsMap),
+          });
+        }
+      }
+
+      const orders = [];
+      for (const [groupKey, agg] of groupMap) {
+        const totalPaid = agg.total_paid_amount ?? 0;
+        const netReceived = agg.net_received_amount ?? 0;
+        const commissionTotal = agg.commission_total ?? 0;
+        const commissionSale = agg.commission_sale ?? 0;
+        const commissionShipping = agg.commission_shipping ?? 0;
+        const commissionFinancing = agg.commission_financing ?? 0;
+        const shippingCost = agg.shipping_cost ?? 0;
+        const netRevenue = Math.max(0, netReceived - shippingCost);
+
+        if (process.env.DEBUG_ML_FINANCE === '1') {
+          const cuadra = Math.abs(commissionTotal - (totalPaid - netReceived)) < 0.02;
+          console.log({
+            order_id: String(groupKey),
+            total_paid_amount: totalPaid,
+            net_received_amount: netReceived,
+            commission_total: commissionTotal,
+            commission_sale: commissionSale,
+            commission_shipping: commissionShipping,
+            commission_financing: commissionFinancing,
+            shipping_cost: shippingCost,
+            net_revenue: netRevenue,
+          });
+          if (!cuadra) {
+            console.error(`[DEBUG_ML_FINANCE] ❌ No cuadra: commission_total (${commissionTotal}) !== total_paid - net_received (${totalPaid - netReceived})`);
+          }
+        }
+
+        const orderItems = [];
+        const aggItemsMap = agg.itemsMap || new Map();
+        for (const [itemSku, data] of aggItemsMap) {
+          orderItems.push({
+            sku: itemSku,
+            quantity: data.quantity,
+            unit_price: data.unit_price ?? (data.line_total / data.quantity),
+            line_total: data.line_total,
+          });
+        }
+
+        orders.push({
+          id: String(groupKey),
+          total: agg.total,
+          currency: agg.currency,
+          created_at: agg.created_at,
+          status: agg.status,
+          gross_sales: agg.gross_sales ?? 0,
+          total_paid_amount: totalPaid,
+          net_received_amount: netReceived,
+          commission_total: commissionTotal,
+          commission_sale: commissionSale,
+          commission_shipping: commissionShipping,
+          commission_financing: commissionFinancing,
+          shipping_income: agg.shipping_income ?? 0,
+          shipping_cost: shippingCost,
+          coupon_amount: agg.coupon_amount ?? 0,
+          net_revenue: netRevenue,
+          advertising_cost: 0,
+          tax_retention: 0,
+          sku: agg.sku ?? null,
+          order_items: orderItems,
+        });
+      }
+
+      return orders;
+    } catch (error) {
+      console.error('Error obteniendo órdenes de MercadoLibre:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Obtiene métricas de publicidad por producto desde Product Ads API.
+   * Requiere permisos de publicidad. Retorna cost, clicks, impressions, cpc por item_id.
+   * @param {string} dateFrom - YYYY-MM-DD
+   * @param {string} dateTo - YYYY-MM-DD (máx 90 días)
+   * @returns {Promise<Array<{item_id: string, cost: number, clicks: number, impressions: number, cpc: number}>>}
+   */
+  async getAdvertisingItemsMetrics(dateFrom, dateTo) {
+    try {
+      const advRes = await this.client.get('/advertising/advertisers', {
+        params: { product_id: 'PADS' },
+        headers: { 'api-version': '2' },
+      });
+      const advertisers = advRes.data?.advertisers || [];
+      const mlc = advertisers.find((a) => a.site_id === 'MLC') || advertisers[0];
+      if (!mlc?.advertiser_id) return [];
+      const advId = mlc.advertiser_id;
+      const results = [];
+      let offset = 0;
+      const limit = 100;
+      const metrics = 'clicks,prints,cost,cpc,direct_amount,indirect_amount,total_amount,direct_items_quantity,indirect_items_quantity,advertising_items_quantity,acos,roas';
+      for (;;) {
+        const itemsRes = await this.client.get(
+          `/advertising/advertisers/${advId}/product_ads/items`,
+          {
+            params: {
+              limit,
+              offset,
+              date_from: dateFrom,
+              date_to: dateTo,
+              metrics,
+              'filters[statuses]': 'active,paused,idle',
+            },
+            headers: { 'api-version': '2' },
+          }
+        );
+        const items = itemsRes.data?.results || [];
+        for (const it of items) {
+          const m = it.metrics || {};
+          results.push({
+            item_id: String(it.item_id || ''),
+            cost: parseFloat(m.cost || 0) || 0,
+            clicks: parseInt(m.clicks || 0, 10) || 0,
+            impressions: parseInt(m.prints || 0, 10) || 0,
+            cpc: parseFloat(m.cpc || 0) || 0,
+            direct_amount: parseFloat(m.direct_amount || 0) || 0,
+            indirect_amount: parseFloat(m.indirect_amount || 0) || 0,
+            total_amount: parseFloat(m.total_amount || 0) || 0,
+            direct_items_quantity: parseInt(m.direct_items_quantity || 0, 10) || 0,
+            indirect_items_quantity: parseInt(m.indirect_items_quantity || 0, 10) || 0,
+            advertising_items_quantity: parseInt(m.advertising_items_quantity || 0, 10) || 0,
+            acos: m.acos != null ? parseFloat(m.acos) : null,
+            roas: m.roas != null ? parseFloat(m.roas) : null,
+          });
+        }
+        if (items.length < limit) break;
+        offset += limit;
+        if (offset >= (itemsRes.data?.paging?.total || 0)) break;
+      }
+      return results;
+    } catch (error) {
+      if (process.env.DEBUG_ML_ADS === '1') {
+        console.warn('[ML Ads Items] Error:', error.response?.data || error.message);
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Obtiene el gasto diario en publicidad desde la API de campaigns (Product Ads).
+   * Coincide con la "Inversión" del dashboard de ML (cuando se genera el gasto).
+   * @param {string} dateFrom - YYYY-MM-DD
+   * @param {string} dateTo - YYYY-MM-DD (máx 90 días)
+   * @returns {Promise<Array<{date: string, cost: number}>>}
+   */
+  async getAdvertisingCampaignsDaily(dateFrom, dateTo) {
+    try {
+      const advRes = await this.client.get('/advertising/advertisers', {
+        params: { product_id: 'PADS' },
+        headers: { 'api-version': '2' },
+      });
+      const advertisers = advRes.data?.advertisers || [];
+      const mlc = advertisers.find((a) => a.site_id === 'MLC') || advertisers[0];
+      if (!mlc?.advertiser_id) return [];
+      const advId = mlc.advertiser_id;
+      const byDate = {};
+      let offset = 0;
+      const limit = 100;
+      for (;;) {
+        const res = await this.client.get(
+          `/advertising/advertisers/${advId}/product_ads/campaigns`,
+          {
+            params: {
+              limit,
+              offset,
+              date_from: dateFrom,
+              date_to: dateTo,
+              metrics: 'cost',
+              aggregation_type: 'DAILY',
+            },
+            headers: { 'api-version': '2' },
+          }
+        );
+        const items = res.data?.results || [];
+        for (const it of items) {
+          const d = it.date;
+          const cost = parseFloat(it.cost || 0) || 0;
+          if (d) byDate[d] = (byDate[d] || 0) + cost;
+        }
+        if (items.length < limit) break;
+        offset += limit;
+        if (offset >= (res.data?.paging?.total || 0)) break;
+      }
+      return Object.entries(byDate).map(([date, cost]) => ({ date, cost }));
+    } catch (error) {
+      if (process.env.DEBUG_ML_ADS === '1') {
+        console.warn('[ML Ads Campaigns] Error:', error.response?.data || error.message);
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Obtiene el gasto en publicidad (Product Ads) desde la API de facturación.
+   * Usa /billing/integration/monthly/periods y /summary/details para extraer cargos tipo PADS.
+   * @param {number} limitPeriods - Cantidad de períodos a consultar (default 6)
+   * @returns {Promise<Array<{period_date: string, amount: number}>>}
+   */
+  async getAdvertisingSpend(limitPeriods = 6) {
+    try {
+      const periodsRes = await this.client.get('/billing/integration/monthly/periods', {
+        params: { group: 'ML', document_type: 'BILL', limit: limitPeriods },
+      });
+      const periods = periodsRes.data?.results || [];
+      const results = [];
+      for (const p of periods) {
+        const key = p.period?.key || p.key;
+        if (!key) continue;
+        try {
+          const summaryRes = await this.client.get(
+            `/billing/integration/periods/key/${key}/summary/details`,
+            { params: { group: 'ML', document_type: 'BILL' } }
+          );
+          const charges = summaryRes.data?.bill_includes?.charges || [];
+          const pads = charges.find((c) => c.type === 'PADS' || (c.label && c.label.toLowerCase().includes('advertising')));
+          const amount = pads ? parseFloat(pads.amount || 0) : 0;
+          results.push({ period_date: key, amount });
+        } catch (err) {
+          if (process.env.DEBUG_ML_ADS === '1') {
+            console.warn(`[ML Ads] No se pudo obtener detalle para período ${key}:`, err.response?.data?.message || err.message);
+          }
+        }
+      }
+      return results;
+    } catch (error) {
+      console.error('[ML Ads] Error obteniendo gasto en publicidad:', error.response?.data || error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Obtiene título y thumbnail de un item (para paneles de publicidad).
+   * @param {string} itemId - ID del item (ej. MLC3539466112)
+   * @returns {Promise<{title: string, thumbnail_url: string}|null>}
+   */
+  async getItemDetails(itemId) {
+    try {
+      const res = await this.client.get(`/items/${itemId}`);
+      const item = res.data;
+      const title = item.title || '';
+      let thumbnail = item.thumbnail || '';
+      if (!thumbnail && item.pictures?.length > 0) {
+        const pic = item.pictures[0];
+        thumbnail = pic.secure_url || pic.url || '';
+        if (thumbnail && /-F\.(jpg|webp|png)$/i.test(thumbnail)) {
+          thumbnail = thumbnail.replace(/-F\.(jpg|webp|png)$/i, '-O.$1');
+        }
+      }
+      return { title, thumbnail_url: thumbnail || null };
+    } catch (err) {
+      if (process.env.DEBUG_ML_ADS === '1') {
+        console.warn(`[ML Item] No se pudo obtener detalle de ${itemId}:`, err.response?.data?.message || err.message);
+      }
+      return null;
+    }
   }
 
   /**
