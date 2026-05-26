@@ -15,6 +15,8 @@ import adminSkusRouter from './src/routes/admin-skus.js';
 import * as skuCache from './src/services/sku-cache.js';
 import * as marketplaceOrdersRepo from './src/db/repositories/marketplace-orders.js';
 import * as locks from './src/db/repositories/sku-locks.js';
+import * as webhookEvents from './src/db/repositories/webhook-events.js';
+import crypto from 'crypto';
 
 // Obtener el directorio actual para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -158,6 +160,31 @@ async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason, ski
 }
 
 /**
+ * Calcula un delivery_id estable por webhook entrante (clave de idempotencia).
+ * Si el mismo webhook llega 2 veces (retry del proveedor), el id es idéntico.
+ */
+function deliveryIdShopify(req) {
+  const id = req.header('x-shopify-webhook-id');
+  if (id) return `shopify:${id}`;
+  const topic = req.header('x-shopify-topic') || 'unknown';
+  const hash = crypto.createHash('sha256').update(req.body || '').digest('hex').slice(0, 16);
+  return `shopify:${topic}:${hash}`;
+}
+
+function deliveryIdMeli(body) {
+  if (body?._id) return `ml:${body._id}`;
+  return `ml:${body?.topic || 'unknown'}:${body?.resource || ''}`;
+}
+
+function deliveryIdFalabella(body) {
+  const event = body?.event || 'unknown';
+  const orderId = body?.payload?.OrderId ?? body?.OrderId ?? body?.orderId ?? '';
+  if (orderId) return `fb:${event}:${orderId}`;
+  const hash = crypto.createHash('sha256').update(JSON.stringify(body || {})).digest('hex').slice(0, 16);
+  return `fb:${event}:${hash}`;
+}
+
+/**
  * Parsea body RAW (Buffer) a JSON de forma segura.
  * Evita "Unexpected token 'n', 'null' is not valid JSON" cuando body vacío o inválido.
  */
@@ -188,13 +215,21 @@ const shopifyRawParser = express.raw({ type: 'application/json', limit: '1mb' })
  * Body RAW: NO express.json (rompe HMAC y genera "null is not valid JSON").
  */
 app.post('/webhooks/shopify/orders/create', shopifyRawParser, verifyShopifyHmac, async (req, res) => {
+  const deliveryId = deliveryIdShopify(req);
   try {
-    console.log('\n🔥 WEBHOOK SHOPIFY RECIBIDO → /webhooks/shopify/orders/create');
     const body = parseRawBodySafe(req.body);
     if (!body) {
-      console.log('❌ Body vacío o JSON inválido');
+      logger.warn({ deliveryId }, 'webhook Shopify orders/create body vacío/inválido');
       return res.status(400).json({ error: 'Body vacío o JSON inválido' });
     }
+    const rec = await webhookEvents.record({
+      deliveryId, source: 'shopify', topic: 'orders/create', payload: body,
+    });
+    if (!rec.isNew) {
+      logger.info({ deliveryId, status: rec.status }, 'webhook Shopify orders/create duplicado, ignorando');
+      return res.status(200).json({ message: 'duplicado', delivery_id: deliveryId, prev_status: rec.status });
+    }
+    logger.info({ deliveryId, orderId: body.id, lineItems: body.line_items?.length }, 'webhook Shopify orders/create');
     console.log('📥 Order ID:', body.id || body.order_number || 'N/A');
     if (body.line_items && body.line_items.length) {
       console.log(`📦 Line items: ${body.line_items.length}`);
@@ -234,18 +269,18 @@ app.post('/webhooks/shopify/orders/create', shopifyRawParser, verifyShopifyHmac,
       else failed++;
     }
 
-    console.log(`📊 orders/create: ${synced} SKUs sincronizados, ${failed} fallidos`);
-    console.log('🔥 WEBHOOK SHOPIFY orders/create PROCESADO\n');
+    logger.info({ deliveryId, synced, failed, total: lineItems.length }, 'webhook Shopify orders/create procesado');
+    await webhookEvents.markProcessed(deliveryId);
     return res.status(200).json({
       success: failed === 0,
       order_id: body.id,
       skus_synced: synced,
       skus_failed: failed,
-      total_line_items: lineItems.length
+      total_line_items: lineItems.length,
     });
   } catch (error) {
-    console.error('❌ Error webhook orders/create:', error.message);
-    console.error(error.stack);
+    logger.error({ deliveryId, err: error.message, stack: error.stack }, 'error webhook Shopify orders/create');
+    await webhookEvents.markFailed(deliveryId, error.message).catch(() => {});
     return res.status(500).json({ error: error.message });
   }
 });
@@ -255,14 +290,21 @@ app.post('/webhooks/shopify/orders/create', shopifyRawParser, verifyShopifyHmac,
  * Evento: Inventory levels update. También usa body RAW.
  */
 app.post('/webhook/inventory', shopifyRawParser, verifyShopifyHmac, async (req, res) => {
+  const deliveryId = deliveryIdShopify(req);
   try {
-    console.log('\n🔥 WEBHOOK SHOPIFY RECIBIDO → /webhook/inventory');
     const body = parseRawBodySafe(req.body);
     if (!body) {
-      console.log('❌ Body vacío o JSON inválido');
+      logger.warn({ deliveryId }, 'webhook Shopify inventory body vacío/inválido');
       return res.status(400).json({ error: 'Body vacío o JSON inválido' });
     }
-    console.log('📥 Body (resumen):', JSON.stringify({ topic: body.topic, inventory_item_id: body.inventory_item_id, available: body.available }, null, 2));
+    const rec = await webhookEvents.record({
+      deliveryId, source: 'shopify', topic: body.topic || 'inventory_levels/update', payload: body,
+    });
+    if (!rec.isNew) {
+      logger.info({ deliveryId, status: rec.status }, 'webhook Shopify inventory duplicado, ignorando');
+      return res.status(200).json({ message: 'duplicado', delivery_id: deliveryId, prev_status: rec.status });
+    }
+    logger.info({ deliveryId, inventory_item_id: body.inventory_item_id, available: body.available }, 'webhook Shopify inventory');
 
     if (body.topic && body.topic !== 'inventory_levels/update' && body.topic !== 'inventory_levels/connect' && body.topic !== 'inventory_levels/disconnect') {
       console.log(`⚠️  Topic "${body.topic}" no es inventory, ignorando`);
@@ -313,24 +355,22 @@ app.post('/webhook/inventory', shopifyRawParser, verifyShopifyHmac, async (req, 
     }
 
     const out = await syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason: 'shopify_inventory' });
-    const okAll = out.results.every(r => r.ok);
+    const okAll = out.results.every((r) => r.ok);
+    await webhookEvents.markProcessed(deliveryId);
     if (okAll) {
-      console.log('🔥 WEBHOOK SHOPIFY inventory PROCESADO\n');
       return res.status(200).json({ success: true, sku, shopifyStock, marketplaces: out.results });
     }
-
-    // Siempre 200 para que Shopify NO reintente: SKU no en Meli/Falabella es esperado (no todos los productos están en todos los marketplaces)
-    console.log('🔥 WEBHOOK SHOPIFY inventory: sync parcial (alguno falló, no reintentar)\n');
+    // Siempre 200: SKU no en algún marketplace es esperado (no todo está publicado).
     return res.status(200).json({
       success: false,
       sku,
       shopifyStock,
       marketplaces: out.results,
-      message: 'Uno o más marketplaces no actualizados (ej. SKU no vendido ahí). No se reintenta.'
+      message: 'Uno o más marketplaces no actualizados (ej. SKU no vendido ahí). No se reintenta.',
     });
   } catch (error) {
-    console.error('❌ Error webhook inventory:', error.message);
-    console.error(error.stack);
+    logger.error({ deliveryId, err: error.message, stack: error.stack }, 'error webhook Shopify inventory');
+    await webhookEvents.markFailed(deliveryId, error.message).catch(() => {});
     return res.status(500).json({ error: error.message });
   }
 });
@@ -682,23 +722,32 @@ let _logOrderNextMeliWebhook = true;
  * URL: https://tu-servidor.com/webhooks/mercadolibre/order
  */
 app.post('/webhooks/mercadolibre/order', async (req, res) => {
+  const deliveryId = deliveryIdMeli(req.body);
   try {
     const { resource, topic, user_id } = req.body;
 
+    const rec = await webhookEvents.record({
+      deliveryId, source: 'mercadolibre', topic, payload: req.body,
+    });
+    if (!rec.isNew) {
+      logger.info({ deliveryId, status: rec.status }, 'webhook ML duplicado, ignorando');
+      return res.status(200).json({ message: 'webhook duplicado', delivery_id: deliveryId, prev_status: rec.status });
+    }
+
     if (topic !== 'orders_v2') {
-      console.log(`⚠️  Topic no reconocido: ${topic}`);
-      console.log(`   💡 Este webhook es de MercadoLibre, solo procesamos 'orders_v2'`);
+      logger.info({ topic }, 'topic ML no procesado');
+      await webhookEvents.markIgnored(deliveryId, `topic ${topic} no procesado`);
       return res.status(200).json({ message: `Topic ${topic} no procesado` });
     }
 
     if (!resource) {
-      console.log('⚠️  Notificación sin resource');
+      await webhookEvents.markFailed(deliveryId, 'resource requerido');
       return res.status(400).json({ error: 'resource es requerido' });
     }
 
     const orderIdMatch = resource.match(/\/orders\/(\d+)/);
     if (!orderIdMatch) {
-      console.log(`⚠️  No se pudo extraer order_id de resource: ${resource}`);
+      await webhookEvents.markFailed(deliveryId, `resource sin order_id: ${resource}`);
       return res.status(400).json({ error: 'order_id no encontrado en resource' });
     }
 
@@ -706,6 +755,7 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     const existingOrder = await marketplaceOrdersRepo.findOrder('mercadolibre', orderId);
     if (existingOrder && existingOrder.status === 'processed') {
       logger.info({ orderId, processedAt: existingOrder.processedAt }, 'orden ML ya procesada, ignorando');
+      await webhookEvents.markIgnored(deliveryId, 'orden ya procesada');
       return res.status(200).json({ message: 'Orden ya procesada', order_id: orderId });
     }
 
@@ -729,24 +779,23 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
 
     const validStatuses = ['confirmed', 'payment_required', 'payment_in_process', 'paid'];
     if (!validStatuses.includes(order.status)) {
-      console.log(`⏭️  Orden ${orderId} en estado "${order.status}", no procesada aún`);
+      logger.info({ orderId, status: order.status }, 'orden ML en estado no procesable, skip');
+      await webhookEvents.markIgnored(deliveryId, `orden estado: ${order.status}`);
       return res.status(200).json({ message: 'Orden en estado no procesable', order_id: orderId, status: order.status });
     }
-
-    console.log(`   Estado: ${order.status}`);
-    console.log(`   Total: ${order.total_amount} ${order.currency_id}`);
 
     isSyncingFromMarketplace.mercadolibre = true;
     try {
       const result = await processMercadoLibreOrder(order, orderId);
+      await webhookEvents.markProcessed(deliveryId);
       return res.status(200).json(result);
     } finally {
       isSyncingFromMarketplace.mercadolibre = false;
     }
   } catch (error) {
     isSyncingFromMarketplace.mercadolibre = false;
-    console.error('❌ Error procesando webhook de MercadoLibre:', error.response?.data || error.message);
-    console.error('Stack:', error.stack);
+    logger.error({ deliveryId, err: error.message, stack: error.stack }, 'error procesando webhook ML');
+    await webhookEvents.markFailed(deliveryId, error.message).catch(() => {});
     return res.status(500).json({ error: error.message, retry: true });
   }
 });
@@ -765,7 +814,16 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
  * NO activar lógica real todavía.
  */
 app.post('/webhooks/falabella/order', async (req, res) => {
+  const deliveryId = deliveryIdFalabella(req.body);
   try {
+    const rec = await webhookEvents.record({
+      deliveryId, source: 'falabella', topic: req.body?.event, payload: req.body,
+    });
+    if (!rec.isNew) {
+      logger.info({ deliveryId, status: rec.status }, 'webhook Falabella duplicado, ignorando');
+      return res.status(200).json({ message: 'webhook duplicado', delivery_id: deliveryId, prev_status: rec.status });
+    }
+
     console.log('\n🔥 WEBHOOK FALABELLA RECIBIDO');
     console.log('='.repeat(60));
 
@@ -818,7 +876,8 @@ app.post('/webhooks/falabella/order', async (req, res) => {
       isSyncingFromMarketplace.falabella = true;
       try {
         const result = await processFalabellaOrder(orderIdForProcess);
-        console.log(`\n🛒 Orden Falabella ${orderIdForProcess} procesada: ${result.items_processed} items, ${result.items_failed} fallidos`);
+        logger.info({ orderId: orderIdForProcess, processed: result.items_processed, failed: result.items_failed }, 'orden Falabella procesada');
+        await webhookEvents.markProcessed(deliveryId);
         return res.status(200).json({ ok: true, order_id: orderIdForProcess, ...result });
       } finally {
         isSyncingFromMarketplace.falabella = false;
@@ -945,16 +1004,16 @@ app.post('/webhooks/falabella/order', async (req, res) => {
     // MODO TEST: no tocar stock, no llamar APIs externas.
     if (!enableFalabellaObs) {
       console.log('   ℹ️  ENABLE_FALABELLA=false → modo webhook_test (sin efectos colaterales)');
+      await webhookEvents.markIgnored(deliveryId, 'ENABLE_FALABELLA=false');
       return res.status(200).json({ ok: true, mode: 'webhook_test' });
     }
 
-    // Cuando se active ENABLE_FALABELLA='true', acá reactivaremos la lógica real
-    // de integración (GetOrder + descuento de stock + redistribución).
     console.log('   ⚠️  ENABLE_FALABELLA=true pero la lógica real aún no está activada en este entorno.');
+    await webhookEvents.markIgnored(deliveryId, 'webhook placeholder');
     return res.status(200).json({ ok: true, mode: 'webhook_placeholder' });
   } catch (error) {
-    console.error('❌ Error procesando webhook de Falabella:', error.message);
-    console.error('Stack:', error.stack);
+    logger.error({ deliveryId, err: error.message, stack: error.stack }, 'error procesando webhook Falabella');
+    await webhookEvents.markFailed(deliveryId, error.message).catch(() => {});
     return res.status(500).json({ error: error.message, retry: true });
   }
 });
