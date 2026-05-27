@@ -841,10 +841,36 @@ let _logOrderNextMeliWebhook = true;
  * Topic: orders_v2
  * URL: https://tu-servidor.com/webhooks/mercadolibre/order
  */
+/**
+ * Topics ML que NUNCA procesamos. Para estos, respondemos 200 inmediato sin
+ * tocar DB ni logger (evita ensuciar webhook_events con miles de filas).
+ * Si en el futuro queremos procesar alguno, lo sacamos de esta lista.
+ */
+const ML_IGNORED_TOPICS = new Set([
+  'items',
+  'items_prices',
+  'public_candidates',
+  'price_suggestion',
+  'catalog_item_competition_status',
+  'questions',
+  'messages',
+  'claims',
+  'shipments',
+  'leads',
+]);
+
 app.post('/webhooks/mercadolibre/order', async (req, res) => {
+  const topic = req.body?.topic;
+
+  // Filtro temprano: topics que sabemos que ignoramos siempre.
+  // 200 OK inmediato sin DB write. Reduce ruido cuando ML manda muchos eventos.
+  if (topic && ML_IGNORED_TOPICS.has(topic)) {
+    return res.status(200).json({ ok: true, ignored: true, topic });
+  }
+
   const deliveryId = deliveryIdMeli(req.body);
   try {
-    const { resource, topic, user_id } = req.body;
+    const { resource, user_id } = req.body;
 
     const rec = await webhookEvents.record({
       deliveryId, source: 'mercadolibre', topic, payload: req.body,
@@ -855,7 +881,7 @@ app.post('/webhooks/mercadolibre/order', async (req, res) => {
     }
 
     if (topic !== 'orders_v2') {
-      logger.info({ topic }, 'topic ML no procesado');
+      logger.info({ topic }, 'topic ML no procesado (no en blacklist pero tampoco orders_v2)');
       await webhookEvents.markIgnored(deliveryId, `topic ${topic} no procesado`);
       return res.status(200).json({ message: `Topic ${topic} no procesado` });
     }
