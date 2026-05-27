@@ -1058,29 +1058,84 @@ class MercadoLibreAPI {
   }
 
   /**
-   * Actualiza el precio de un item o variación.
+   * Actualiza el precio de un item SIN variations.
    * @param {string} itemId
    * @param {number} price
-   * @param {number|null} variationId
    * @returns {Promise<boolean>}
    */
-  async updatePrice(itemId, price, variationId = null) {
+  async updateItemPrice(itemId, price) {
     try {
       const p = Number(price);
       if (!Number.isFinite(p) || p <= 0) {
-        console.error(`updatePrice: precio inválido para ${itemId}: ${price}`);
+        console.error(`updateItemPrice: precio inválido para ${itemId}: ${price}`);
         return false;
-      }
-      if (variationId !== null) {
-        const response = await this.client.put(`/items/${itemId}/variations/${variationId}`, { price: p });
-        return response.status === 200;
       }
       const response = await this.client.put(`/items/${itemId}`, { price: p });
       return response.status === 200;
     } catch (error) {
-      console.error(`Error actualizando precio para item ${itemId}:`, error.response?.data || error.message);
+      console.error(`Error actualizando precio item ${itemId}:`, error.response?.data || error.message);
       return false;
     }
+  }
+
+  /**
+   * Actualiza precios de TODAS las variations de un item en una sola llamada.
+   * Requerido porque ML rechaza PUT individual a /items/{id}/variations/{varId}
+   * cuando los precios entre variations hermanas difieren ("item.variations.price.different").
+   *
+   * @param {string} itemId
+   * @param {Array<{id: number|string, price: number}>} variations
+   * @returns {Promise<boolean>}
+   */
+  async updateItemVariationsPrices(itemId, variations) {
+    try {
+      if (!Array.isArray(variations) || variations.length === 0) {
+        console.error(`updateItemVariationsPrices: variations vacío para ${itemId}`);
+        return false;
+      }
+      const cleaned = [];
+      for (const v of variations) {
+        const id = v.id != null ? Number(v.id) : null;
+        const p = Number(v.price);
+        if (!id || !Number.isFinite(p) || p <= 0) {
+          console.error(`updateItemVariationsPrices: variation inválida en ${itemId}:`, v);
+          return false;
+        }
+        cleaned.push({ id, price: p });
+      }
+      const response = await this.client.put(`/items/${itemId}`, { variations: cleaned });
+      return response.status === 200;
+    } catch (error) {
+      console.error(`Error actualizando variations de item ${itemId}:`, error.response?.data || error.message);
+      return false;
+    }
+  }
+
+  /**
+   * @deprecated Usar updateItemPrice o updateItemVariationsPrices. Se mantiene
+   * por compat con código que ya lo llamaba — internamente delega al endpoint
+   * batch para evitar el error item.variations.price.different.
+   *
+   * NOTA: si pasas variationId, este método solo va a actualizar UNA variation,
+   * lo cual va a fallar en ML si las hermanas tienen precios distintos. El
+   * caller debería migrar a updateItemVariationsPrices con todas las variations.
+   */
+  async updatePrice(itemId, price, variationId = null) {
+    const p = Number(price);
+    if (!Number.isFinite(p) || p <= 0) {
+      console.error(`updatePrice: precio inválido para ${itemId}: ${price}`);
+      return false;
+    }
+    if (variationId !== null) {
+      try {
+        const response = await this.client.put(`/items/${itemId}/variations/${variationId}`, { price: p });
+        return response.status === 200;
+      } catch (error) {
+        console.error(`Error updatePrice deprecated path item ${itemId}:`, error.response?.data || error.message);
+        return false;
+      }
+    }
+    return this.updateItemPrice(itemId, p);
   }
 
   /**
