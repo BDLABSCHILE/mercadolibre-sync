@@ -5,8 +5,6 @@ import FalabellaAPI from './falabella-api.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createIdempotencyStore } from './idempotency-store.js';
-import { meliVariationIdToSku, meliItemIdToSkus } from './meli-sku-mapping.js';
 import { config } from './src/config.js';
 import { logger } from './src/logger.js';
 import { requestId } from './src/middleware/request-id.js';
@@ -72,12 +70,9 @@ function isAnyMarketplaceSyncActive() {
 }
 
 // ========== IDEMPOTENCIA ==========
-// Store genérico por marketplace (driver file|memory configurable).
-// OJO: si IDEMPOTENCY_STORE=file en Render multi-instancia o FS efímero, NO garantiza idempotencia global.
-const idempotency = {
-  mercadolibre: createIdempotencyStore('mercadolibre'),
-  falabella: createIdempotencyStore('falabella'),
-};
+// Migrada a DB en fase 3 etapa 3 (tablas webhook_events, marketplace_orders,
+// marketplace_order_items). El antiguo idempotency-store.js (file/memory) ya
+// NO se usa en runtime — vive en el repo solo como referencia histórica.
 
 /**
  * Calcula el stock para MercadoLibre
@@ -1218,12 +1213,14 @@ app.post('/webhooks/falabella/order', async (req, res) => {
  * Endpoint de salud para verificar que el servidor está funcionando
  */
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    idempotency_store: process.env.IDEMPOTENCY_STORE || 'file',
     is_syncing_from_marketplace: isSyncingFromMarketplace,
-    falabella_enabled: Boolean(falabella)
+    falabella_enabled: Boolean(falabella),
+    hmac_verification: Boolean(config.SHOPIFY_API_SECRET),
+    database_url_configured: Boolean(config.DATABASE_URL),
+    reconcile_interval_min: config.RECONCILE_INTERVAL_MIN,
   });
 });
 
@@ -1400,7 +1397,6 @@ app.listen(PORT, async () => {
       falabella_enabled: Boolean(falabella),
       hmac_verification: Boolean(config.SHOPIFY_API_SECRET),
       database_url_configured: Boolean(config.DATABASE_URL),
-      idempotency_store: config.IDEMPOTENCY_STORE,
       reconcile_interval_min: config.RECONCILE_INTERVAL_MIN,
     },
     'servidor iniciado',
