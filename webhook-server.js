@@ -906,6 +906,7 @@ const ML_IGNORED_TOPICS = new Set([
   'claims',
   'shipments',
   'leads',
+  'stock-locations', // eco que ML manda cada vez que actualizamos stock
 ]);
 
 app.post('/webhooks/mercadolibre/order', async (req, res) => {
