@@ -177,6 +177,81 @@ export default class FalabellaAPI {
   }
 
   /**
+   * Obtiene listado completo de productos del seller con su stock y precio actual.
+   * Usado por el reconciliador para detectar drift sin hacer 1 call por SKU.
+   *
+   * @returns {Promise<Map<string, {stock: number, price: number, salePrice: number|null, parentSku: string|null}>>}
+   *   Map keyed por SellerSku.
+   */
+  async getAllProducts() {
+    if (!this.enabled) return new Map();
+    const out = new Map();
+    let offset = 0;
+    const limit = 100;
+    const maxIterations = 30; // safety: 30*100 = 3000 productos máximo
+
+    for (let i = 0; i < maxIterations; i++) {
+      const extraParams = { Format: 'JSON', Limit: limit, Offset: offset };
+      let raw;
+      try {
+        raw = await this.call('GetProducts', extraParams, { method: 'GET' });
+      } catch (err) {
+        console.error(`[Falabella getAllProducts] error en offset ${offset}:`, err.message);
+        throw err;
+      }
+      const data = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+      if (!data) throw new Error('Falabella GetProducts: respuesta no parseable');
+
+      if (data.ErrorResponse) {
+        const head = data.ErrorResponse.Head ?? data.ErrorResponse;
+        const code = head?.ErrorCode ?? 'unknown';
+        const msg = head?.ErrorMessage ?? JSON.stringify(data.ErrorResponse);
+        throw new Error(`Falabella GetProducts: ${code} - ${msg}`);
+      }
+
+      const body = data.SuccessResponse?.Body ?? data.Body;
+      let productsData = body?.Products?.Product ?? body?.Products ?? [];
+      if (productsData === '' || productsData == null) productsData = [];
+      const arr = Array.isArray(productsData) ? productsData : [productsData];
+
+      for (const p of arr) {
+        if (!p) continue;
+        const sku = String(p.SellerSku ?? '').trim();
+        if (!sku) continue;
+        // Extraer Stock y Price de BusinessUnits (puede haber varios; tomamos el primero del operatorCode configurado)
+        let stock = null;
+        let price = null;
+        let salePrice = null;
+        const bus = p.BusinessUnits?.BusinessUnit ?? p.BusinessUnits ?? [];
+        const buArr = Array.isArray(bus) ? bus : [bus];
+        for (const bu of buArr) {
+          if (!bu) continue;
+          if (this.operatorCode && bu.OperatorCode && String(bu.OperatorCode) !== this.operatorCode) continue;
+          if (bu.Stock != null) stock = parseInt(bu.Stock, 10);
+          if (bu.Price != null) price = parseFloat(bu.Price);
+          if (bu.SalePrice != null) salePrice = parseFloat(bu.SalePrice);
+          break;
+        }
+        // Fallback: si no hay BU del operatorCode, intentar nivel raíz
+        if (stock == null && p.Quantity != null) stock = parseInt(p.Quantity, 10);
+        if (price == null && p.Price != null) price = parseFloat(p.Price);
+
+        out.set(sku, {
+          stock: Number.isFinite(stock) ? stock : null,
+          price: Number.isFinite(price) ? price : null,
+          salePrice: Number.isFinite(salePrice) ? salePrice : null,
+          parentSku: p.ParentSku ?? null,
+        });
+      }
+
+      if (arr.length < limit) break;
+      offset += arr.length;
+    }
+
+    return out;
+  }
+
+  /**
    * Obtiene listado de órdenes (GetOrders)
    * Rango fijo: últimos 30 días. Sin filtro Status.
    * @param {Object} options - Opciones de filtrado

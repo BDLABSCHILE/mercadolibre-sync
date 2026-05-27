@@ -17,6 +17,7 @@ import * as marketplaceOrdersRepo from './src/db/repositories/marketplace-orders
 import * as locks from './src/db/repositories/sku-locks.js';
 import * as webhookEvents from './src/db/repositories/webhook-events.js';
 import { syncPriceForShopifyProduct, syncPriceForSku, syncAllPricesFromShopify } from './src/services/price-sync.js';
+import { reconcileStock } from './src/services/reconciler.js';
 import { adminAuth } from './src/middleware/admin-auth.js';
 import crypto from 'crypto';
 
@@ -497,6 +498,54 @@ app.post('/admin/sync-all-prices', adminAuth, async (req, res) => {
       logger.info(summary, 'sync-all-prices completado');
     } catch (err) {
       logger.error({ err: err.message, stack: err.stack }, 'sync-all-prices background error');
+    }
+  })();
+});
+
+/**
+ * POST /admin/reconcile-stock
+ *   Body opcional: {
+ *     dry_run?: boolean,    // true = NO escribe en marketplaces, solo reporta drift
+ *     skus?: string[],      // limitar a estos SKUs (opcional)
+ *     delay_ms?: number,    // pausa entre SKUs (default 0, ya es eficiente al leer en batch)
+ *     skip_ml?: boolean,
+ *     skip_falabella?: boolean,
+ *   }
+ * Si dry_run=true responde 200 con resumen sincrónico (incluye samples del drift).
+ * Si dry_run=false responde 202 y corre en background.
+ */
+app.post('/admin/reconcile-stock', adminAuth, async (req, res) => {
+  const body = req.body || {};
+  const dryRun = Boolean(body.dry_run);
+  const skus = Array.isArray(body.skus) ? body.skus : undefined;
+  const delayMs = Number.isFinite(body.delay_ms) ? body.delay_ms : 0;
+  const skipMl = Boolean(body.skip_ml);
+  const skipFalabella = Boolean(body.skip_falabella);
+
+  if (dryRun) {
+    try {
+      const summary = await reconcileStock({ shopify, meli, falabella }, {
+        dryRun: true, skus, delayMs, skipMl, skipFalabella,
+      });
+      return res.json(summary);
+    } catch (err) {
+      logger.error({ err: err.message }, 'reconcile-stock dry-run failed');
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  res.status(202).json({
+    message: 'Reconciliación iniciada en background. Revisa los logs.',
+    filter: { skus, delayMs, skipMl, skipFalabella },
+  });
+  (async () => {
+    try {
+      const summary = await reconcileStock({ shopify, meli, falabella }, {
+        dryRun: false, skus, delayMs, skipMl, skipFalabella,
+      });
+      logger.info(summary, 'reconcile-stock completado');
+    } catch (err) {
+      logger.error({ err: err.message, stack: err.stack }, 'reconcile-stock background error');
     }
   })();
 });
