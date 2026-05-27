@@ -50,6 +50,13 @@ const schema = z.object({
   MELI_CACHE_DIR: envStr(z.string().optional()),
 
   SYNC_ALL_SECRET: envStr(z.string().optional()),
+
+  // Contraseña para el dashboard UI (basic auth). Si no se setea, se usa
+  // SYNC_ALL_SECRET como fallback. Permite tener una clave corta+memorable
+  // para el login humano (UI_PASSWORD) sin debilitar la clave de los endpoints
+  // API (SYNC_ALL_SECRET, que debería ser larga y aleatoria).
+  UI_PASSWORD: envStr(z.string().min(1).optional()),
+  UI_USERNAME: envStr(z.string().min(1).default('admin')),
   SYNC_ALL_DELAY_MS: envNum(z.coerce.number().int().nonnegative().default(1200)),
   SYNC_ALL_SKU_LIST: envStr(z.string().optional()),
   SYNC_ALL_SKU_PREFIX: envStr(z.string().optional()),
