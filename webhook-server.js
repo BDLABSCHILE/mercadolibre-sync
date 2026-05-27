@@ -1401,6 +1401,7 @@ app.listen(PORT, async () => {
       hmac_verification: Boolean(config.SHOPIFY_API_SECRET),
       database_url_configured: Boolean(config.DATABASE_URL),
       idempotency_store: config.IDEMPOTENCY_STORE,
+      reconcile_interval_min: config.RECONCILE_INTERVAL_MIN,
     },
     'servidor iniciado',
   );
@@ -1409,4 +1410,21 @@ app.listen(PORT, async () => {
   import('./check-pending-orders.js')
     .then((module) => module.default())
     .catch((err) => logger.warn({ err: err.message }, 'check-pending-orders falló'));
+
+  // Cron del reconciliador. Si RECONCILE_INTERVAL_MIN > 0, arranca setInterval.
+  if (config.RECONCILE_INTERVAL_MIN > 0) {
+    const ms = config.RECONCILE_INTERVAL_MIN * 60 * 1000;
+    logger.info({ intervalMin: config.RECONCILE_INTERVAL_MIN }, 'reconciler cron: activado');
+    setInterval(async () => {
+      try {
+        logger.info({ intervalMin: config.RECONCILE_INTERVAL_MIN }, 'reconciler cron: tick');
+        const summary = await reconcileStock({ shopify, meli, falabella }, {});
+        logger.info(summary, 'reconciler cron: completado');
+      } catch (err) {
+        logger.error({ err: err.message, stack: err.stack }, 'reconciler cron: error');
+      }
+    }, ms);
+  } else {
+    logger.info('reconciler cron: deshabilitado (RECONCILE_INTERVAL_MIN=0). Solo manual vía /admin/reconcile-stock.');
+  }
 });

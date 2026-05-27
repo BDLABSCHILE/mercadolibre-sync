@@ -58,6 +58,10 @@ const schema = z.object({
 
   PRICE_MARKUP: envNum(z.coerce.number().positive().default(1.3)),
   PRICE_ROUND_ENDING: envNum(z.coerce.number().int().nonnegative().default(990)),
+
+  // Cron del reconciliador. 0 = OFF (solo manual via endpoint). N>0 = cada N min.
+  // Sugerido: 1440 (1 vez al día) para volumen bajo, 240 (cada 4h) para volumen medio.
+  RECONCILE_INTERVAL_MIN: envNum(z.coerce.number().int().nonnegative().default(0)),
 });
 
 const parsed = schema.safeParse(process.env);
