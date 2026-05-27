@@ -5,8 +5,6 @@ import FalabellaAPI from './falabella-api.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createIdempotencyStore } from './idempotency-store.js';
-import { meliVariationIdToSku, meliItemIdToSkus } from './meli-sku-mapping.js';
 import { config } from './src/config.js';
 import { logger } from './src/logger.js';
 import { requestId } from './src/middleware/request-id.js';
@@ -72,12 +70,9 @@ function isAnyMarketplaceSyncActive() {
 }
 
 // ========== IDEMPOTENCIA ==========
-// Store genérico por marketplace (driver file|memory configurable).
-// OJO: si IDEMPOTENCY_STORE=file en Render multi-instancia o FS efímero, NO garantiza idempotencia global.
-const idempotency = {
-  mercadolibre: createIdempotencyStore('mercadolibre'),
-  falabella: createIdempotencyStore('falabella'),
-};
+// Migrada a DB en fase 3 etapa 3 (tablas webhook_events, marketplace_orders,
+// marketplace_order_items). El antiguo idempotency-store.js (file/memory) ya
+// NO se usa en runtime — vive en el repo solo como referencia histórica.
 
 /**
  * Calcula el stock para MercadoLibre
