@@ -44,8 +44,9 @@ const schema = z.object({
   STOCK_OFFSET: envNum(z.coerce.number().int().nonnegative().default(1)),
   STOCK_OFFSET_FALABELLA: envNum(z.coerce.number().int().nonnegative().optional()),
 
-  IDEMPOTENCY_STORE: envStr(z.enum(['memory', 'file']).default('memory')),
-  IDEMPOTENCY_FILE_DIR: envStr(z.string().optional()),
+  // IDEMPOTENCY_STORE / IDEMPOTENCY_FILE_DIR: deprecated. La idempotencia
+  // migró a tablas webhook_events + marketplace_orders en Neon. Si están en
+  // env del host se ignoran silenciosamente (sin schema, sin warning).
   MELI_CACHE_DIR: envStr(z.string().optional()),
 
   SYNC_ALL_SECRET: envStr(z.string().optional()),

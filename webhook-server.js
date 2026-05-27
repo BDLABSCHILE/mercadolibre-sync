@@ -1213,12 +1213,14 @@ app.post('/webhooks/falabella/order', async (req, res) => {
  * Endpoint de salud para verificar que el servidor está funcionando
  */
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    idempotency_store: process.env.IDEMPOTENCY_STORE || 'file',
     is_syncing_from_marketplace: isSyncingFromMarketplace,
-    falabella_enabled: Boolean(falabella)
+    falabella_enabled: Boolean(falabella),
+    hmac_verification: Boolean(config.SHOPIFY_API_SECRET),
+    database_url_configured: Boolean(config.DATABASE_URL),
+    reconcile_interval_min: config.RECONCILE_INTERVAL_MIN,
   });
 });
 
@@ -1395,7 +1397,6 @@ app.listen(PORT, async () => {
       falabella_enabled: Boolean(falabella),
       hmac_verification: Boolean(config.SHOPIFY_API_SECRET),
       database_url_configured: Boolean(config.DATABASE_URL),
-      idempotency_store: config.IDEMPOTENCY_STORE,
       reconcile_interval_min: config.RECONCILE_INTERVAL_MIN,
     },
     'servidor iniciado',
