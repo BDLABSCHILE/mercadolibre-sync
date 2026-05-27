@@ -17,6 +17,25 @@ import { priceForMarketplace, pricesEqual } from './price.js';
 import * as platformState from '../db/repositories/platform-state.js';
 import * as skuCache from './sku-cache.js';
 import * as locks from '../db/repositories/sku-locks.js';
+import * as overrideCache from './override-cache.js';
+import { applyOverride, pickOverride } from './price-override.js';
+
+/**
+ * Calcula el target efectivo para un SKU en una plataforma, considerando
+ * overrides activos. Si no hay override, retorna el target base de la regla
+ * general.
+ *
+ * @returns {Promise<{target: number, override: Object|null, base: number}>}
+ */
+export async function effectiveTargetForSku(sku, shopifyPrice, platform) {
+  const base = priceForMarketplace(shopifyPrice);
+  if (base == null) return { target: null, override: null, base: null };
+  const overrides = await overrideCache.findActiveFor(sku, platform);
+  const chosen = pickOverride(overrides, platform);
+  if (!chosen) return { target: base, override: null, base };
+  const target = applyOverride(base, chosen, shopifyPrice);
+  return { target, override: chosen, base };
+}
 
 /**
  * Batch update de precios de las variations de un item ML.
@@ -106,22 +125,22 @@ export async function syncMlItemPrices(itemId, variants, clients, opts = {}) {
 /**
  * Sincroniza Falabella para un SKU (single, con lock y debounce).
  */
-async function syncFalabellaForSku({ sku, target, mapping, clients, reason, force }) {
+async function syncFalabellaForSku({ sku, target, mapping, clients, reason, force, overrideId }) {
   try {
     const state = await platformState.get(sku, 'falabella');
     if (!force && state && pricesEqual(state.price, target)) {
       logger.debug({ sku, target }, 'falabella price already synced, skip');
-      return { marketplace: 'falabella', ok: true, reason: 'unchanged', price: target };
+      return { marketplace: 'falabella', ok: true, reason: 'unchanged', price: target, overrideId };
     }
     await locks.withLock(sku, async () => {
       await clients.falabella.updatePriceBySKU(mapping.falabellaSellerSku, target);
       await platformState.setPrice(sku, 'falabella', target, reason);
     });
     logger.info(
-      { sku, platform: 'falabella', prev: state?.price ?? null, target, reason },
+      { sku, platform: 'falabella', prev: state?.price ?? null, target, reason, override: overrideId },
       'falabella price actualizado',
     );
-    return { marketplace: 'falabella', ok: true, prevPrice: state?.price ?? null, price: target };
+    return { marketplace: 'falabella', ok: true, prevPrice: state?.price ?? null, price: target, overrideId };
   } catch (err) {
     logger.error({ sku, platform: 'falabella', err: err.message }, 'error actualizando precio falabella');
     return { marketplace: 'falabella', ok: false, reason: 'error', error: err.message };
@@ -141,11 +160,11 @@ async function syncFalabellaForSku({ sku, target, mapping, clients, reason, forc
  * variation.
  */
 export async function syncPriceForSku(sku, shopifyPrice, clients, opts = {}) {
-  const target = priceForMarketplace(shopifyPrice);
+  const baseTarget = priceForMarketplace(shopifyPrice);
   const reason = opts.reason || 'shopify_price';
-  const out = { sku, shopifyPrice, target, results: [] };
+  const out = { sku, shopifyPrice, targetBase: baseTarget, results: [] };
 
-  if (target == null) {
+  if (baseTarget == null) {
     logger.warn({ sku, shopifyPrice }, 'precio target inválido, skip');
     out.results.push({ marketplace: 'all', ok: false, reason: 'invalid_target' });
     return out;
@@ -162,30 +181,33 @@ export async function syncPriceForSku(sku, shopifyPrice, clients, opts = {}) {
   if (mapping.mlItemId) {
     if (mapping.mlVariationId) {
       // Item con variations: hay que actualizar TODAS al mismo target.
+      // Para cada hermana, calcular target efectivo (con override individual).
+      // Asumimos shopifyPrice igual para todas las hermanas (limitación documentada;
+      // syncAllPricesFromShopify hace lo correcto leyendo el price real de cada).
       const siblings = await skuCache.getByMlItem(mapping.mlItemId);
-      const variants = siblings.map((s) => ({
-        sku: s.sku,
-        mlVariationId: s.mlVariationId,
-        target, // asumimos hermanas mismo target. Caso edge documentado arriba.
-      }));
+      const variants = [];
+      for (const s of siblings) {
+        const { target: eff } = await effectiveTargetForSku(s.sku, shopifyPrice, 'mercadolibre');
+        variants.push({ sku: s.sku, mlVariationId: s.mlVariationId, target: eff });
+      }
       const mlRes = await syncMlItemPrices(mapping.mlItemId, variants, clients, { reason, force: opts.force });
-      // Buscar el resultado del SKU específico
       const myRes = mlRes.results.find((r) => r.sku === sku) || { marketplace: 'mercadolibre', ok: false, reason: 'missing_in_batch' };
       out.results.push(myRes);
     } else {
-      // Item sin variations: PUT directo al item.
+      // Item sin variations: PUT directo al item con target efectivo.
+      const { target: mlTarget, override: mlOverride } = await effectiveTargetForSku(sku, shopifyPrice, 'mercadolibre');
       try {
         const state = await platformState.get(sku, 'mercadolibre');
-        if (!opts.force && state && pricesEqual(state.price, target)) {
-          out.results.push({ marketplace: 'mercadolibre', ok: true, reason: 'unchanged', price: target });
+        if (!opts.force && state && pricesEqual(state.price, mlTarget)) {
+          out.results.push({ marketplace: 'mercadolibre', ok: true, reason: 'unchanged', price: mlTarget, overrideId: mlOverride?.id });
         } else {
           await locks.withLock(sku, async () => {
-            const ok = await clients.meli.updateItemPrice(mapping.mlItemId, target);
+            const ok = await clients.meli.updateItemPrice(mapping.mlItemId, mlTarget);
             if (!ok) throw new Error('updateItemPrice returned false');
-            await platformState.setPrice(sku, 'mercadolibre', target, reason);
+            await platformState.setPrice(sku, 'mercadolibre', mlTarget, reason);
           });
-          logger.info({ sku, platform: 'mercadolibre', prev: state?.price ?? null, target, reason }, 'ml price actualizado (item sin variations)');
-          out.results.push({ marketplace: 'mercadolibre', ok: true, prevPrice: state?.price ?? null, price: target });
+          logger.info({ sku, platform: 'mercadolibre', prev: state?.price ?? null, target: mlTarget, base: baseTarget, override: mlOverride?.id, reason }, 'ml price actualizado (item sin variations)');
+          out.results.push({ marketplace: 'mercadolibre', ok: true, prevPrice: state?.price ?? null, price: mlTarget, overrideId: mlOverride?.id });
         }
       } catch (err) {
         logger.error({ sku, err: err.message }, 'error actualizando ml item');
@@ -198,7 +220,8 @@ export async function syncPriceForSku(sku, shopifyPrice, clients, opts = {}) {
 
   // ---- Falabella ----
   if (clients.falabella && !opts.skipFalabella && mapping.falabellaSellerSku) {
-    out.results.push(await syncFalabellaForSku({ sku, target, mapping, clients, reason, force: opts.force }));
+    const { target: fbTarget, override: fbOverride } = await effectiveTargetForSku(sku, shopifyPrice, 'falabella');
+    out.results.push(await syncFalabellaForSku({ sku, target: fbTarget, mapping, clients, reason, force: opts.force, overrideId: fbOverride?.id }));
   }
 
   return out;
@@ -271,8 +294,9 @@ export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}
   };
 
   // 2) Agrupar por ml_item_id. Items sin mlItemId quedan en "noMl" para Falabella-only.
-  const byMlItem = new Map(); // mlItemId → [{sku, shopifyPrice, target, mlVariationId, mapping}]
-  const noMl = [];            // [{sku, shopifyPrice, target, mapping}]
+  // Para cada item, calculamos target EFECTIVO por plataforma (considerando overrides).
+  const byMlItem = new Map(); // mlItemId → [{sku, shopifyPrice, targetMl, targetFb, mlOverride, fbOverride, mlVariationId, mapping}]
+  const noMl = [];            // [{sku, shopifyPrice, targetFb, fbOverride, mapping}]
 
   for (const item of items) {
     const mapping = await skuCache.getBySku(item.sku);
@@ -280,18 +304,26 @@ export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}
       summary.skippedNoMapping++;
       continue;
     }
-    const target = priceForMarketplace(item.shopifyPrice);
-    if (target == null) continue;
+    const baseTarget = priceForMarketplace(item.shopifyPrice);
+    if (baseTarget == null) continue;
 
-    const entry = { ...item, target, mapping };
+    const mlEff = await effectiveTargetForSku(item.sku, item.shopifyPrice, 'mercadolibre');
+    const fbEff = await effectiveTargetForSku(item.sku, item.shopifyPrice, 'falabella');
+
+    const entry = {
+      ...item,
+      targetBase: baseTarget,
+      targetMl: mlEff.target,
+      mlOverride: mlEff.override,
+      targetFb: fbEff.target,
+      fbOverride: fbEff.override,
+      mapping,
+    };
     if (mapping.mlItemId) {
       const list = byMlItem.get(mapping.mlItemId) || [];
       list.push(entry);
       byMlItem.set(mapping.mlItemId, list);
     } else {
-      if (onlyWithMlMapping && !mapping.falabellaSellerSku) {
-        // sin ML ni Falabella: no hay nada que hacer
-      }
       noMl.push(entry);
     }
   }
@@ -301,19 +333,19 @@ export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}
     for (const [mlItemId, group] of byMlItem) {
       for (const e of group) {
         const stateMl = await platformState.get(e.sku, 'mercadolibre');
-        const willChangeMl = !pricesEqual(stateMl?.price, e.target);
+        const willChangeMl = !pricesEqual(stateMl?.price, e.targetMl);
         let willChangeFb = false;
         let hasFb = Boolean(e.mapping.falabellaSellerSku);
         if (hasFb) {
           const stateFb = await platformState.get(e.sku, 'falabella');
-          willChangeFb = !pricesEqual(stateFb?.price, e.target);
+          willChangeFb = !pricesEqual(stateFb?.price, e.targetFb);
         }
         if (summary.samples.length < 20) {
           summary.samples.push({
             sku: e.sku, productTitle: e.productTitle, variantTitle: e.variantTitle,
-            shopifyPrice: e.shopifyPrice, target: e.target,
-            ml: { mapped: true, lastSynced: stateMl?.price ?? null, willChange: willChangeMl },
-            falabella: { mapped: hasFb, lastSynced: null, willChange: willChangeFb },
+            shopifyPrice: e.shopifyPrice, targetBase: e.targetBase,
+            ml: { mapped: true, target: e.targetMl, lastSynced: stateMl?.price ?? null, willChange: willChangeMl, overrideId: e.mlOverride?.id },
+            falabella: { mapped: hasFb, target: e.targetFb, lastSynced: null, willChange: willChangeFb, overrideId: e.fbOverride?.id },
           });
         }
         willChangeMl ? summary.updatedMl++ : summary.unchangedMl++;
@@ -325,7 +357,7 @@ export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}
       const hasFb = Boolean(e.mapping.falabellaSellerSku);
       if (hasFb) {
         const stateFb = await platformState.get(e.sku, 'falabella');
-        const willChangeFb = !pricesEqual(stateFb?.price, e.target);
+        const willChangeFb = !pricesEqual(stateFb?.price, e.targetFb);
         willChangeFb ? summary.updatedFb++ : summary.unchangedFb++;
       } else {
         summary.skippedFb++;
@@ -340,7 +372,7 @@ export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}
 
   for (const [mlItemId, group] of byMlItem) {
     const variantsForMl = group.map((e) => ({
-      sku: e.sku, mlVariationId: e.mapping.mlVariationId, target: e.target,
+      sku: e.sku, mlVariationId: e.mapping.mlVariationId, target: e.targetMl,
     }));
 
     try {
@@ -380,7 +412,7 @@ export async function syncAllPricesFromShopify(shopifyClient, clients, opts = {}
   for (let i = 0; i < allFalabellaItems.length; i++) {
     const e = allFalabellaItems[i];
     const r = await syncFalabellaForSku({
-      sku: e.sku, target: e.target, mapping: e.mapping, clients, reason,
+      sku: e.sku, target: e.targetFb, mapping: e.mapping, clients, reason, overrideId: e.fbOverride?.id,
     });
     if (r.ok && r.reason === 'unchanged') summary.unchangedFb++;
     else if (r.ok) summary.updatedFb++;
