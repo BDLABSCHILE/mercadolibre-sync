@@ -1,6 +1,7 @@
 /**
- * Layout HTML del dashboard Valiz.
- * Paleta cuero/marrón/crema. Tipografía: Cormorant Garamond (serif) + Inter (sans).
+ * Layout HTML del dashboard Valiz Sync.
+ * Stack: Tailwind CSS via CDN + HTMX + iconos Lucide inline.
+ * Diseño: SaaS premium estilo Linear/Vercel. Paleta BDLABS azul + cobre.
  */
 
 export function esc(str) {
@@ -20,14 +21,28 @@ export function fmtCLP(n) {
   return `$${num.toLocaleString('es-CL')}`;
 }
 
-// Logos: SVG inline para ML y Falabella (control total, sin dependencias externas).
-// El logo Valiz se sirve desde /assets/valiz.{png,svg} si está disponible.
-export const ML_LOGO = `<svg viewBox="0 0 28 28" width="22" height="22" xmlns="http://www.w3.org/2000/svg" aria-label="MercadoLibre"><circle cx="14" cy="14" r="14" fill="#FFE600"/><path d="M7 16.5c1.2-2.1 4-3.5 7-3.5s5.8 1.4 7 3.5c-.5-1.7-3.2-3-7-3s-6.5 1.3-7 3z" fill="#2D3277"/><circle cx="9" cy="11" r="1.2" fill="#2D3277"/><circle cx="19" cy="11" r="1.2" fill="#2D3277"/></svg>`;
+// ============ ICONOS LUCIDE INLINE ============
+export const ICON = {
+  box: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`,
+  sliders: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>`,
+  settings: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  search: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>`,
+  alertTriangle: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+  check: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  link: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+  unlink: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18.84 12.25 1.72-1.71h-.02a5.004 5.004 0 0 0-.12-7.07 5.006 5.006 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5.004 5.004 0 0 0 .12 7.07 5.006 5.006 0 0 0 6.95 0l1.71-1.71"/><line x1="8" x2="8" y1="2" y2="5"/><line x1="2" x2="5" y1="8" y2="8"/><line x1="16" x2="16" y1="19" y2="22"/><line x1="19" x2="22" y1="16" y2="16"/></svg>`,
+  edit: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+  trash: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+  x: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+  plus: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>`,
+  zap: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+  trendingUp: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>`,
+  refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
+};
 
-export const FB_LOGO = `<svg viewBox="0 0 28 28" width="22" height="22" xmlns="http://www.w3.org/2000/svg" aria-label="Falabella"><rect width="28" height="28" rx="4" fill="#00833F"/><text x="14" y="19" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="white" text-anchor="middle" letter-spacing="-0.5">FL</text></svg>`;
-
-const FONTS = `https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap`;
+const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
 const HTMX_CDN = 'https://unpkg.com/htmx.org@1.9.12';
+const FONTS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap';
 
 export function layout({ title, content, active = '' }) {
   return `<!DOCTYPE html>
@@ -39,503 +54,179 @@ export function layout({ title, content, active = '' }) {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="${FONTS}">
+  <script src="${TAILWIND_CDN}"></script>
   <script src="${HTMX_CDN}" defer></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            // BDLABS brand
+            brand: {
+              50: '#EFF6FF', 100: '#DBEAFE', 200: '#BFDBFE', 300: '#93C5FD',
+              400: '#60A5FA', 500: '#3B82F6', 600: '#2563EB', 700: '#1D4ED8',
+              800: '#1E40AF', 900: '#1E3A8A', 950: '#0F1E4F',
+            },
+            copper: {
+              50: '#FFF7ED', 100: '#FFEDD5', 200: '#FED7AA', 300: '#FDBA74',
+              400: '#FB923C', 500: '#F97316', 600: '#EA580C', 700: '#C2410C',
+              800: '#9A3412', 900: '#7C2D12',
+            },
+            ink: { DEFAULT: '#0F172A', soft: '#334155', muted: '#64748B', mute: '#94A3B8' },
+            line: { DEFAULT: '#E2E8F0', soft: '#F1F5F9' },
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+          boxShadow: {
+            'soft': '0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06)',
+            'card': '0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.04)',
+            'lift': '0 10px 20px rgba(15, 23, 42, 0.08), 0 4px 8px rgba(15, 23, 42, 0.04)',
+            'brand': '0 4px 14px rgba(37, 99, 235, 0.25)',
+          },
+        },
+      },
+    };
+  </script>
   <style>
-    /* ============ PALETA CUERO/CRÉMA ============ */
-    :root {
-      --cream: #FAF5EE;
-      --cream-soft: #F5EDE0;
-      --beige: #E8DDC9;
-      --beige-strong: #D4C4A8;
-      --leather: #5C3A1E;
-      --leather-deep: #3D2914;
-      --leather-soft: #8B6240;
-      --gold: #B8860B;
-      --gold-soft: #D4A847;
-      --ink: #1F1611;
-      --ink-soft: #5C3A1E;
-      --muted: #8A7460;
+    body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
 
-      --success: #3E7C47;
-      --success-soft: #DEF0DE;
-      --warning: #B8860B;
-      --warning-soft: #FAEFCC;
-      --danger: #A0522D;
-      --danger-soft: #F6E0D6;
-      --info: #4A6B82;
-      --info-soft: #DDE7EE;
+    /* Animation for connection dots in header */
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.4; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+    .connection-dot { animation: pulse-dot 2s ease-in-out infinite; }
+    .connection-dot:nth-child(2) { animation-delay: 0.5s; }
+    .connection-dot:nth-child(3) { animation-delay: 1s; }
 
-      --radius: 8px;
-      --radius-sm: 5px;
-      --shadow-sm: 0 1px 2px rgba(31, 22, 17, 0.06), 0 1px 3px rgba(31, 22, 17, 0.04);
-      --shadow-md: 0 4px 8px rgba(31, 22, 17, 0.08), 0 2px 4px rgba(31, 22, 17, 0.04);
-      --shadow-lg: 0 12px 24px rgba(31, 22, 17, 0.12), 0 4px 8px rgba(31, 22, 17, 0.06);
+    /* Connection line gradient */
+    .connection-line {
+      background: linear-gradient(90deg, transparent 0%, #CBD5E1 20%, #CBD5E1 80%, transparent 100%);
     }
 
-    /* ============ RESET + BASE ============ */
-    *, *::before, *::after { box-sizing: border-box; }
-    html { -webkit-text-size-adjust: 100%; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
-      color: var(--ink);
-      background: var(--cream);
-      -webkit-font-smoothing: antialiased;
-    }
-    h1, h2, h3, h4 { font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 600; color: var(--leather-deep); margin: 0; line-height: 1.2; }
-    h1 { font-size: 2.2rem; letter-spacing: -0.02em; }
-    h2 { font-size: 1.8rem; margin-bottom: 0.5rem; letter-spacing: -0.01em; }
-    h3 { font-size: 1.4rem; }
-    h4 { font-size: 1.1rem; font-family: 'Inter', sans-serif; font-weight: 600; color: var(--leather); margin-top: 1.2rem; margin-bottom: 0.6rem; }
-    p { margin: 0 0 0.8rem; }
-    a { color: var(--leather); text-decoration: none; transition: color 0.15s; }
-    a:hover { color: var(--gold); }
+    /* HTMX loading indicator */
+    .htmx-indicator { opacity: 0; transition: opacity 0.2s; }
+    .htmx-request .htmx-indicator { opacity: 1; }
 
-    /* ============ NAVBAR ============ */
-    nav.main {
-      background: var(--leather-deep);
-      color: var(--cream);
-      padding: 0;
-      box-shadow: var(--shadow-md);
-      position: sticky;
-      top: 0;
-      z-index: 50;
-    }
-    nav.main .nav-inner {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 0.9rem 2rem;
-      display: flex;
-      align-items: center;
-      gap: 2rem;
-    }
-    nav.main .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.7rem;
-      font-family: 'Cormorant Garamond', serif;
-      font-weight: 700;
-      font-size: 1.5rem;
-      color: var(--cream);
-      letter-spacing: 0.01em;
-    }
-    nav.main .brand img {
-      height: 36px;
-      width: auto;
-      filter: brightness(0) invert(1);
-      opacity: 0.95;
-    }
-    nav.main .brand .brand-fallback {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      background: var(--gold);
-      color: var(--leather-deep);
-      font-weight: 700;
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 1.4rem;
-    }
-    nav.main .links { display: flex; gap: 0.4rem; flex: 1; }
-    nav.main .links a {
-      color: var(--cream);
-      padding: 0.4rem 0.9rem;
-      border-radius: var(--radius-sm);
-      opacity: 0.7;
-      font-weight: 500;
-      transition: all 0.15s;
-    }
-    nav.main .links a:hover { opacity: 1; background: rgba(255,255,255,0.08); }
-    nav.main .links a.active { opacity: 1; background: rgba(255,255,255,0.12); color: var(--gold-soft); }
-    nav.main .platforms { display: flex; gap: 0.7rem; align-items: center; }
-    nav.main .platforms .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      background: rgba(255,255,255,0.06);
-      padding: 0.3rem 0.8rem 0.3rem 0.4rem;
-      border-radius: 20px;
-      font-size: 0.75rem;
-      opacity: 0.95;
-    }
-    .platform-logo {
-      height: 22px;
-      width: 22px;
-      object-fit: contain;
-      border-radius: 50%;
-      background: white;
-      padding: 2px;
+    /* Scrollbar polish */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: #94A3B8; background-clip: padding-box; }
+
+    /* Dialog backdrop */
+    dialog::backdrop { background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); }
+    dialog[open] { animation: dialog-fade 0.18s ease-out; }
+    @keyframes dialog-fade {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
-    /* ============ MAIN ============ */
-    main.container {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 2rem;
-    }
-    .page-header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-      padding-bottom: 1rem;
-      border-bottom: 1px solid var(--beige);
-    }
-    .page-header .small { color: var(--muted); font-size: 0.9rem; font-family: 'Inter', sans-serif; }
-
-    /* ============ STATS ============ */
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 1rem;
-      margin-bottom: 2rem;
-    }
-    .stat {
-      background: white;
-      border: 1px solid var(--beige);
-      padding: 1rem 1.2rem;
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-sm);
-      transition: transform 0.15s, box-shadow 0.15s;
-    }
-    .stat:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
-    .stat .label {
-      font-size: 0.7rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-weight: 600;
-      margin-bottom: 0.3rem;
-    }
-    .stat .value {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--leather-deep);
-      line-height: 1;
-    }
-    .stat.accent { background: linear-gradient(135deg, var(--gold) 0%, var(--gold-soft) 100%); border-color: var(--gold); }
-    .stat.accent .label, .stat.accent .value { color: var(--leather-deep); }
-
-    /* ============ TOOLBAR ============ */
-    .toolbar {
-      display: flex;
-      gap: 0.7rem;
-      align-items: center;
-      margin-bottom: 1.2rem;
-      padding: 1rem;
-      background: white;
-      border: 1px solid var(--beige);
-      border-radius: var(--radius);
-      flex-wrap: wrap;
-      box-shadow: var(--shadow-sm);
-    }
-    .toolbar input, .toolbar select {
-      margin: 0;
-      padding: 0.5rem 0.8rem;
-      border: 1px solid var(--beige-strong);
-      border-radius: var(--radius-sm);
-      background: var(--cream-soft);
-      font-family: inherit;
-      font-size: 0.9rem;
-      color: var(--ink);
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .toolbar input:focus, .toolbar select:focus {
-      outline: none;
-      border-color: var(--leather);
-      background: white;
-    }
-    .toolbar input[type="search"] { flex: 1; min-width: 220px; }
-
-    /* ============ TABLE ============ */
-    .table-wrap {
-      background: white;
-      border: 1px solid var(--beige);
-      border-radius: var(--radius);
-      overflow: hidden;
-      box-shadow: var(--shadow-sm);
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.88rem;
-    }
-    table th {
-      background: var(--cream-soft);
-      padding: 0.75rem 0.9rem;
-      text-align: left;
-      font-weight: 600;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--muted);
-      border-bottom: 1px solid var(--beige);
-      white-space: nowrap;
-    }
-    table td {
-      padding: 0.7rem 0.9rem;
-      border-bottom: 1px solid var(--cream-soft);
-      vertical-align: middle;
-    }
-    table tbody tr { transition: background 0.1s; }
-    table tbody tr:hover { background: var(--cream-soft); }
-    table tbody tr:last-child td { border-bottom: none; }
-
-    /* ============ BADGES ============ */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      padding: 0.15rem 0.55rem;
-      border-radius: 11px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      line-height: 1.4;
-    }
-    .badge.ok { background: var(--success-soft); color: var(--success); }
-    .badge.warn { background: var(--warning-soft); color: var(--warning); }
-    .badge.err { background: var(--danger-soft); color: var(--danger); }
-    .badge.info { background: var(--info-soft); color: var(--info); }
-    .badge.dim { background: var(--cream-soft); color: var(--muted); border: 1px solid var(--beige); }
-    .badge.ml {
-      background: #FFE600;
-      color: #2D3277;
-      padding-left: 0.3rem;
-    }
-    .badge.ml::before {
-      content: '';
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #2D3277;
-    }
-    .badge.fb {
-      background: var(--success);
-      color: white;
-    }
-
-    /* ============ BUTTONS ============ */
-    button, .btn {
-      padding: 0.5rem 1rem;
-      border-radius: var(--radius-sm);
-      border: 1px solid transparent;
-      background: var(--leather);
-      color: white;
-      font-family: inherit;
-      font-size: 0.88rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    button:hover, .btn:hover { background: var(--leather-deep); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
-    button:active { transform: translateY(0); }
-
-    button.ghost {
-      background: transparent;
-      color: var(--leather);
-      border: 1px solid var(--beige-strong);
-    }
-    button.ghost:hover { background: var(--cream-soft); color: var(--leather-deep); border-color: var(--leather-soft); }
-
-    button.danger { background: var(--danger); border-color: var(--danger); }
-    button.danger:hover { background: #864121; }
-
-    button.accent { background: var(--gold); color: var(--leather-deep); }
-    button.accent:hover { background: var(--gold-soft); }
-
-    button.icon {
-      padding: 0.35rem 0.55rem;
-      font-size: 0.95rem;
-    }
-
-    /* ============ DIALOG / MODAL ============ */
-    dialog {
-      max-width: 720px;
-      width: 90%;
-      border: none;
-      border-radius: var(--radius);
-      padding: 0;
-      box-shadow: var(--shadow-lg);
-      background: var(--cream);
-    }
-    dialog::backdrop { background: rgba(31, 22, 17, 0.5); backdrop-filter: blur(2px); }
-    dialog article {
-      padding: 1.8rem 2rem;
-    }
-    dialog header {
-      padding-bottom: 1rem;
-      margin-bottom: 1rem;
-      border-bottom: 1px solid var(--beige);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-    dialog header strong {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 1.6rem;
-      font-weight: 600;
-      color: var(--leather-deep);
-    }
-    dialog .close {
-      background: none;
-      border: none;
-      color: var(--muted);
-      padding: 0.3rem;
-      cursor: pointer;
-      font-size: 1.4rem;
-      line-height: 1;
-    }
-    dialog .close::before { content: '×'; }
-    dialog .close:hover { color: var(--leather-deep); }
-    dialog footer {
-      padding-top: 1rem;
-      margin-top: 1.5rem;
-      border-top: 1px solid var(--beige);
-      display: flex;
-      gap: 0.6rem;
-      justify-content: flex-end;
-    }
-
-    /* ============ FORMS ============ */
-    form label {
-      display: block;
-      margin-bottom: 0.9rem;
-      font-size: 0.85rem;
-      color: var(--ink-soft);
-      font-weight: 500;
-    }
-    form input, form select, form textarea {
-      width: 100%;
-      padding: 0.55rem 0.8rem;
-      margin-top: 0.3rem;
-      border: 1px solid var(--beige-strong);
-      border-radius: var(--radius-sm);
-      background: white;
-      font-family: inherit;
-      font-size: 0.9rem;
-      color: var(--ink);
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    form input:focus, form select:focus {
-      outline: none;
-      border-color: var(--leather);
-      box-shadow: 0 0 0 3px rgba(92, 58, 30, 0.1);
-    }
-    form .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-    details {
-      margin: 1rem 0;
-      padding: 0.7rem 1rem;
-      background: var(--cream-soft);
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--beige);
-    }
-    details summary {
-      cursor: pointer;
-      font-weight: 500;
-      color: var(--leather);
-      font-size: 0.85rem;
-    }
-    details summary:hover { color: var(--leather-deep); }
-    details[open] summary { margin-bottom: 0.7rem; }
-
-    /* ============ UTILITY ============ */
-    .small { font-size: 0.8rem; color: var(--muted); }
-    .right { text-align: right; }
-    .mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace; font-size: 0.85em; }
-    .truncate { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .empty {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: var(--muted);
-      font-style: italic;
-    }
-
-    /* ============ BANNERS ============ */
-    .banner {
-      padding: 0.9rem 1.2rem;
-      border-radius: var(--radius-sm);
-      margin-bottom: 1.2rem;
-      font-size: 0.9rem;
-      border-left: 4px solid;
-    }
-    .banner.success { background: var(--success-soft); border-color: var(--success); color: #205A30; }
-    .banner.warn { background: var(--warning-soft); border-color: var(--warning); color: #6B5005; }
-    .banner.info { background: var(--info-soft); border-color: var(--info); color: #2A4759; }
-
-    /* ============ ARTICLE / CARD ============ */
-    article {
-      background: white;
-      border: 1px solid var(--beige);
-      border-radius: var(--radius);
-      padding: 1.2rem 1.4rem;
-      margin-bottom: 1rem;
-      box-shadow: var(--shadow-sm);
-    }
-    article header {
-      padding-bottom: 0.7rem;
-      margin-bottom: 0.7rem;
-      border-bottom: 1px solid var(--cream-soft);
-      font-weight: 600;
-      color: var(--leather-deep);
-    }
-
-    /* ============ PRICE DISPLAY ============ */
-    .price {
-      font-family: ui-monospace, SFMono-Regular, monospace;
-      font-weight: 600;
-      color: var(--leather-deep);
-    }
-    .price-cell {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
+    /* Subtle row hover */
+    tbody tr { transition: background-color 0.12s; }
   </style>
 </head>
-<body>
-  <nav class="main">
-    <div class="nav-inner">
-      <div class="brand">
-        <img src="/assets/valiz.png" alt="Valiz" onerror="this.outerHTML='<span class=brand-fallback>V</span>'">
-        <span>Valiz Sync</span>
+<body class="bg-slate-50 text-ink min-h-screen flex flex-col">
+
+  <!-- ============ HEADER ============ -->
+  <header class="bg-white border-b border-line">
+    <div class="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between gap-6">
+      <!-- Brand: Valiz logo + title -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 flex items-center justify-center shadow-brand overflow-hidden">
+          <img src="/assets/valiz.png" alt="Valiz" class="w-full h-full object-contain p-1 filter brightness-0 invert"
+            onerror="this.outerHTML='<span class=\\'text-white font-bold text-lg\\'>V</span>'">
+        </div>
+        <div>
+          <h1 class="text-xl font-bold text-ink tracking-tight">Valiz <span class="text-brand-600">Sync</span></h1>
+          <p class="text-xs text-ink-muted -mt-0.5">Stock & price sync · 3 canales</p>
+        </div>
       </div>
-      <div class="links">
-        <a href="/admin/ui" class="${active === 'skus' ? 'active' : ''}">SKUs</a>
-        <a href="/admin/ui/overrides" class="${active === 'overrides' ? 'active' : ''}">Ajustes manuales</a>
-        <a href="/admin/ui/operations" class="${active === 'ops' ? 'active' : ''}">Operaciones</a>
+
+      <!-- Connected channels (creative integration) -->
+      <div class="hidden md:flex items-center gap-1 px-4 py-2 bg-slate-50 rounded-xl border border-line">
+        <span class="text-[10px] uppercase tracking-wider text-ink-muted font-semibold mr-3">Connected</span>
+        <div class="flex items-center gap-2">
+          <div class="relative group">
+            <div class="w-8 h-8 rounded-lg bg-white border border-line flex items-center justify-center shadow-soft hover:shadow-card transition-all">
+              <span class="text-[10px] font-bold text-emerald-600">SH</span>
+            </div>
+            <span class="connection-dot absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+          <div class="w-6 h-px connection-line"></div>
+          <div class="relative group">
+            <div class="w-8 h-8 rounded-lg bg-white border border-line flex items-center justify-center shadow-soft hover:shadow-card transition-all overflow-hidden">
+              <img src="/assets/mercadolibre.png" alt="ML" class="w-6 h-6 object-contain"
+                onerror="this.outerHTML='<span class=\\'text-[10px] font-bold\\'>ML</span>'">
+            </div>
+            <span class="connection-dot absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+          <div class="w-6 h-px connection-line"></div>
+          <div class="relative group">
+            <div class="w-8 h-8 rounded-lg bg-white border border-line flex items-center justify-center shadow-soft hover:shadow-card transition-all overflow-hidden">
+              <img src="/assets/falabella.png" alt="Falabella" class="w-6 h-6 object-contain"
+                onerror="this.outerHTML='<span class=\\'text-[10px] font-bold\\'>FB</span>'">
+            </div>
+            <span class="connection-dot absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+        </div>
       </div>
-      <div class="platforms">
-        <span class="pill" title="MercadoLibre conectado">
-          <img src="/assets/mercadolibre.png" alt="ML" class="platform-logo" onerror="this.outerHTML='${ML_LOGO.replace(/"/g, '\\"').replace(/'/g, "\\'")}'">
-          <span>MercadoLibre</span>
-        </span>
-        <span class="pill" title="Falabella conectado">
-          <img src="/assets/falabella.png" alt="Falabella" class="platform-logo" onerror="this.outerHTML='${FB_LOGO.replace(/"/g, '\\"').replace(/'/g, "\\'")}'">
-          <span>Falabella</span>
-        </span>
+
+      <!-- BDLABS badge -->
+      <div class="flex items-center gap-2 text-xs text-ink-muted">
+        <span class="hidden sm:inline">Powered by</span>
+        <a href="#" class="font-semibold text-ink-soft hover:text-copper-600 transition-colors flex items-center gap-1.5">
+          <span class="w-5 h-5 rounded bg-gradient-to-br from-brand-700 to-copper-600 flex items-center justify-center text-white text-[10px] font-bold">B</span>
+          BDLABS
+        </a>
       </div>
     </div>
-  </nav>
-  <main class="container">
+
+    <!-- ============ NAV TABS ============ -->
+    <nav class="max-w-screen-2xl mx-auto px-6 flex items-center gap-1 border-t border-line bg-white">
+      ${navTab('/admin/ui', 'SKUs', ICON.box, active === 'skus')}
+      ${navTab('/admin/ui/overrides', 'Ajustes manuales', ICON.sliders, active === 'overrides')}
+      ${navTab('/admin/ui/operations', 'Operaciones', ICON.settings, active === 'ops')}
+    </nav>
+  </header>
+
+  <!-- ============ MAIN ============ -->
+  <main class="flex-1 max-w-screen-2xl mx-auto w-full px-6 py-6">
     ${content}
   </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="border-t border-line bg-white">
+    <div class="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between text-xs text-ink-muted">
+      <div class="flex items-center gap-4">
+        <span class="flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 connection-dot"></span>
+          Sistema operativo
+        </span>
+        <span class="text-line">·</span>
+        <span>Sync automático activo</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span>Valiz Sync · Designed & built by</span>
+        <span class="font-semibold text-ink-soft">BDLABS</span>
+      </div>
+    </div>
+  </footer>
+
 </body>
 </html>`;
+}
+
+function navTab(href, label, icon, isActive) {
+  return `
+    <a href="${href}" class="${isActive
+      ? 'border-brand-600 text-brand-700 font-semibold'
+      : 'border-transparent text-ink-muted hover:text-ink hover:border-line'} flex items-center gap-2 px-4 py-3 border-b-2 -mb-px text-sm transition-colors">
+      ${icon}
+      <span>${label}</span>
+    </a>
+  `;
 }
