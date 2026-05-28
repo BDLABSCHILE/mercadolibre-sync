@@ -11,7 +11,9 @@
     "webhook": "node webhook-server.js",
     "check-orders": "node check-pending-orders.js",
     "migrate": "node src/db/migrate.js",
-    "seed": "node src/db/seed-sku-mapping.js"
+    "seed": "node src/db/seed-sku-mapping.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "engines": {
     "node": ">=18.17.0"
@@ -33,5 +35,8 @@
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.7"
   }
 }

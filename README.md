@@ -1,225 +1,293 @@
-# Sincronización de Stock Shopify ↔ MercadoLibre
+# Valiz Sync
 
-Esta aplicación sincroniza el stock de productos entre Shopify y MercadoLibre, aplicando una regla de offset (por defecto: restar 1 unidad del stock de Shopify para MercadoLibre).
+Sincronización automática de **stock y precios** entre Shopify, MercadoLibre y Falabella, con dashboard web para gestión de overrides.
 
-## Características
+Shopify es la **fuente de verdad** para stock y precio base. El sistema propaga cambios a los marketplaces aplicando reglas de negocio (offset de stock, markup de precio) y permite overrides puntuales por SKU o por familia.
 
-- ✅ Sincronización automática de stock por SKU
-- ✅ Regla configurable: `Stock MercadoLibre = Stock Shopify - OFFSET` (mínimo 0)
-- ✅ Sincronización masiva de todos los productos
-- ✅ Sincronización individual por SKU
-- ✅ Manejo automático de tokens de MercadoLibre
-- ✅ Logs detallados del proceso
+## Estado del proyecto
 
-## Requisitos Previos
+Productivo desde el 2026-05-26. Refactor completado en 7 etapas (fase 3) + 2 fases adicionales (overrides + UI). Ver `AUDIT.md` y `ARCHITECTURE.md` para historial.
 
-1. **Node.js** (versión 16 o superior)
-2. **Credenciales de Shopify**:
-   - URL de tu tienda (ej: `mi-tienda.myshopify.com`)
-   - Access Token (creado desde Admin → Apps → Develop apps)
-3. **Credenciales de MercadoLibre**:
-   - App ID
-   - Client Secret
-   - Access Token
-   - Refresh Token
+---
 
-## Instalación
+## Stack
 
-1. **Instalar dependencias:**
-   ```bash
-   cd mercadolibre-sync
-   npm install
-   ```
+- **Node.js ≥18.17** + ES modules (sin TypeScript, sin transpilación).
+- **Express 4** para HTTP.
+- **Postgres** (Neon, us-east-1) para estado persistente.
+- **pino** logger estructurado JSON.
+- **zod** validación de envs y bodies.
+- **HTMX + Pico CSS** para el dashboard server-rendered (sin SPA, sin build).
+- **vitest** para tests.
+- Hosting: **Render** (single instance).
 
-2. **Configurar variables de entorno:**
-   ```bash
-   cp .env.example .env
-   ```
+---
 
-3. **Editar el archivo `.env` con tus credenciales:**
-   ```env
-   # Shopify
-   SHOPIFY_STORE_URL=tu-tienda.myshopify.com
-   SHOPIFY_ACCESS_TOKEN=SHOPIFY_ACCESS_TOKEN_AQUI
+## Reglas de negocio
 
-   # MercadoLibre
-   MELI_APP_ID=MELI_APP_ID_AQUI
-   MELI_CLIENT_SECRET=MELI_CLIENT_SECRET_AQUI
-   MELI_ACCESS_TOKEN=MELI_ACCESS_TOKEN_AQUI
-   MELI_REFRESH_TOKEN=MELI_REFRESH_TOKEN_AQUI
+### Stock
+```
+stock_marketplace = max(0, stock_shopify - 1)
+```
+Mismo offset para ML y Falabella. Configurable via `STOCK_OFFSET`. Override por SKU pendiente (no implementado en V1).
 
-   # Configuración de sincronización
-   STOCK_OFFSET=1
-   ```
+### Precio
+```
+precio_marketplace = round_up_to_990(precio_shopify * 1.3)
+```
+Markup `1.3` igual para ambos. Redondeo hacia arriba al próximo número terminado en `990`. Override puntuales vía dashboard.
 
-## Cómo Obtener las Credenciales
+### Reconciliación
+Job (manual o cron diario) que compara stock en marketplaces vs target esperado y **auto-corrige** drift. Shopify es fuente de verdad incondicional.
 
-📖 **Para una guía paso a paso detallada en español, consulta [GUIA_CREDENCIALES.md](./GUIA_CREDENCIALES.md)**
+---
 
-### Resumen Rápido
+## Cómo funciona
 
-**Shopify:**
-1. Ve a **Settings** → **Apps and sales channels** → **Develop apps**
-2. Crea una nueva app personalizada
-3. Configura permisos: `read_products` y `read_inventory`
-4. Instala la app y copia el **Admin API access token**
+```
+                        ┌─────────────────────┐
+                        │  Dashboard /admin/ui │ ← Benja
+                        └──────────┬──────────┘
+                                   │
+                                   ▼
+┌────────────┐  webhook ┌─────────────────────┐  webhook ┌──────────────┐
+│  Shopify   │ ───────► │  Render service     │ ◄─────── │ MercadoLibre │
+└────────────┘          │  (webhook-server.js)│          └──────────────┘
+                        │                     │  webhook ┌──────────────┐
+                        │  ┌───────────────┐  │ ◄─────── │  Falabella   │
+                        │  │ Neon Postgres │  │          └──────────────┘
+                        │  └───────────────┘  │
+                        └─────────────────────┘
+```
 
-**MercadoLibre:**
-1. Ve a [developers.mercadolibre.com.ar](https://developers.mercadolibre.com.ar/)
-2. Crea una aplicación
-3. Obtén **App ID**, **Client Secret**, **Access Token** y **Refresh Token**
+### Flujos principales
 
-**⚠️ Nota Importante:** Si ves el comando `npm init @shopify/app@latest`, **NO lo necesitas**. Ese comando es para crear apps completas de Shopify con interfaz y webhooks. Para nuestra sincronización simple, solo necesitas el Access Token siguiendo los pasos de arriba o la guía detallada.
+| Evento | Disparador | Lógica |
+|---|---|---|
+| Cambio de stock en Shopify | webhook `inventory_levels/update` | lee stock actual, calcula `max(0, stock-1)`, propaga a ML+Falabella |
+| Venta en Shopify | webhook `orders/create` | re-lee stock Shopify, propaga a marketplaces |
+| Cambio de precio en Shopify | webhook `products/update` | aplica regla `× 1.3 + 990` + overrides, propaga |
+| Venta en ML | webhook `orders_v2` | descuenta Shopify (con lock por SKU), redistribuye a Falabella |
+| Venta en Falabella | webhook `onOrderCreated` | descuenta Shopify, redistribuye a ML |
+| Reconciliación periódica | manual o cron | detecta drift, auto-corrige |
 
-## Uso
+### Anti-loop
 
-### Sincronizar Todos los Productos
+- **Idempotencia por delivery_id** (tabla `webhook_events`): el mismo webhook reentregado se ignora.
+- **Idempotencia por orden e item** (`marketplace_orders` + `_items`): orden ya procesada no se re-descuenta.
+- **Lock por SKU** (`sku_locks`): solo una operación a la vez por SKU.
+- **Debounce por valor** (`platform_state.last_synced_*`): no llamamos API si el target ya está sincronizado.
 
-Ejecuta la sincronización completa de todos los productos que tengan SKU en común:
+---
+
+## Setup local
 
 ```bash
-npm start
+git clone https://github.com/benjacuerosvaliz-ai/mercadolibre-sync
+cd mercadolibre-sync
+npm install
+
+# Copiar y completar .env
+cp env.example .env
+# (editar .env con tus credenciales — ver más abajo)
+
+# Aplicar migraciones a la DB Neon
+npm run migrate
+
+# (Solo primera vez) Cargar mapping inicial de SKUs
+npm run seed
+
+# Arrancar server
+npm start          # producción
+npm run dev        # con auto-reload
 ```
 
-o
+### Variables de entorno mínimas
+
+| Variable | Descripción |
+|---|---|
+| `DATABASE_URL` | Connection string Postgres (Neon). |
+| `SHOPIFY_STORE_URL` | `tu-tienda.myshopify.com`. |
+| `SHOPIFY_ACCESS_TOKEN` | Admin API token. |
+| `SHOPIFY_LOCATION_ID` | ID de location para inventory. |
+| `SHOPIFY_API_SECRET` | Para verificación HMAC de webhooks. |
+| `MELI_APP_ID`, `MELI_CLIENT_SECRET`, `MELI_REFRESH_TOKEN`, `MELI_USER_ID` | OAuth ML. |
+| `ENABLE_FALABELLA=true`, `FALABELLA_USER_ID`, `FALABELLA_API_KEY` | Si usás Falabella. |
+| `SYNC_ALL_SECRET` | Auth de endpoints API admin. Generar: `openssl rand -hex 32`. |
+| `UI_PASSWORD` | Auth del dashboard. Puede ser corto+memorable. |
+
+Ver `env.example` para la lista completa con defaults.
+
+### Tests
 
 ```bash
-node index.js
+npm test           # corre una vez
+npm run test:watch # watch mode
 ```
 
-### Sincronizar un SKU Específico
+---
 
+## Endpoints HTTP
+
+### Webhooks (entrantes, no auth manual)
+- `POST /webhooks/shopify/orders/create` — venta en Shopify.
+- `POST /webhook/inventory` — inventory_levels/update Shopify.
+- `POST /webhooks/shopify/products/update` — cambio de producto Shopify (incluye precio).
+- `POST /webhooks/mercadolibre/order` — `orders_v2` ML.
+- `POST /webhooks/falabella/order` — `onOrderCreated` Falabella.
+
+### Dashboard UI
+- `GET /admin/ui` — tabla de SKUs con filtros, stats, modal de overrides.
+- `GET /admin/ui/overrides` — lista de overrides activos.
+- `GET /admin/ui/operations` — botones para barrido masivo y reconciliación.
+
+Auth: basic-auth, user `admin` / pass `UI_PASSWORD`.
+
+### Endpoints API admin (auth con `SYNC_ALL_SECRET` por header `X-Admin-Key` o query `?key=`)
+
+| Endpoint | Función |
+|---|---|
+| `GET /admin/skus` | Lista mappings (?stats=1 para resumen). |
+| `GET/POST/DELETE /admin/skus/:sku/*` | CRUD mappings. |
+| `GET /admin/price-overrides` | Lista overrides (?filterKey=X, ?platform=X, ?active=0). |
+| `GET /admin/price-overrides/preview?sku=X&shopifyPrice=N` | Calcula precio efectivo. |
+| `POST /admin/price-overrides` | Crear override. |
+| `PATCH /admin/price-overrides/:id` | Editar. |
+| `DELETE /admin/price-overrides/:id` | Soft-delete. |
+| `POST /admin/sync-price` | Force sync de un SKU. |
+| `POST /admin/sync-all-prices` | Barrido masivo (?dry_run=1, ?skus=[...], ?prefixes=[...]). |
+| `POST /admin/reconcile-stock` | Reconcilia stock (?dry_run=1). |
+| `GET /sync-all` | Sync masivo de stock (legacy, usar `?key=`). |
+| `GET /test-sync?sku=X` | Debug: sync individual de un SKU. |
+| `GET /health` | Status del servicio. |
+
+---
+
+## Operaciones comunes
+
+### Aplicar la regla de precios a todo el catálogo
 ```bash
-node index.js SKU-12345
+curl -X POST "$URL/admin/sync-all-prices" \
+  -H "X-Admin-Key: $SECRET" -H "Content-Type: application/json" \
+  -d '{"dry_run":true}'
+# revisar samples, si OK:
+curl -X POST "$URL/admin/sync-all-prices" \
+  -H "X-Admin-Key: $SECRET" -H "Content-Type: application/json" \
+  -d '{"delay_ms":2500}'
 ```
 
-### Sincronización en Tiempo Real con Webhooks
+### Reconciliar stock
+```bash
+curl -X POST "$URL/admin/reconcile-stock" \
+  -H "X-Admin-Key: $SECRET" -d '{"dry_run":true}'
+```
 
-Para sincronizar automáticamente cuando cambie el stock en Shopify, puedes usar el servidor de webhooks:
+### Crear un override de precio
+```bash
+curl -X POST "$URL/admin/price-overrides" \
+  -H "X-Admin-Key: $SECRET" -H "Content-Type: application/json" \
+  -d '{"scope":"sku","key":"B-M-NE","platform":"mercadolibre",
+       "overrideType":"discount_fixed","value":3000,"note":"descuento promo"}'
+```
 
-1. **Iniciar el servidor de webhooks:**
-   ```bash
-   npm run webhook
+O desde el dashboard: `/admin/ui` → click ✏️ en el SKU → llenar form.
+
+### Activar el cron de reconciliación
+En Render Environment: `RECONCILE_INTERVAL_MIN=1440` (1 vez al día).
+
+### Agregar un SKU nuevo
+1. Crear el producto en Shopify con el SKU correcto.
+2. Crear el listing en ML y anotar `item_id` + `variation_id` (si tiene).
+3. Crear el listing en Falabella con `SellerSku` igual al SKU de Shopify.
+4. POST a `/admin/skus`:
+   ```json
+   { "sku":"NUEVO-SKU", "mlItemId":"MLCxxxxx", "mlVariationId":"...",
+     "falabellaSellerSku":"NUEVO-SKU" }
    ```
+5. Próximo cambio de stock/precio en Shopify se propaga automáticamente.
 
-2. **Configurar el webhook en Shopify:**
-   - Ve a **Settings** → **Notifications**
-   - Scroll hasta **Webhooks**
-   - Haz clic en **Create webhook**
-   - Evento: **Inventory levels update**
-   - URL: `https://tu-servidor.com/webhook/inventory`
-   - Formato: **JSON**
+---
 
-3. **Exponer tu servidor local (opcional):**
-   Si estás ejecutando localmente, puedes usar herramientas como:
-   - [ngrok](https://ngrok.com/): `ngrok http 3000`
-   - [localtunnel](https://localtunnel.github.io/www/): `lt --port 3000`
+## Troubleshooting
 
-**Nota:** El servidor de webhooks requiere que tu aplicación esté accesible desde internet. Para producción, considera usar servicios como Heroku, Railway, o Vercel.
+### Webhook ML llega pero no procesa la venta
+- Mirar logs: ¿aparece `procesando orden ML` con `orderId`?
+- Si dice `topic ML duplicado`: ML reentregó un webhook ya procesado, OK.
+- Si dice `topic X no procesado`: ML mandó un evento que no es `orders_v2`, OK ignorarlo.
+- Si dice `SKU no encontrado en mapping`: el `ml_variation_id` no está en `sku_mapping`. Agregarlo via `/admin/skus`.
+- Si dice `ambiguous_item_no_variation`: el item ML tiene varias variantes pero ML mandó sin `variation_id`. Falla de ML; revisar la orden manualmente.
 
-## Configuración de la Regla de Stock
+### Falabella da 429 (rate limit)
+- El código reintenta 2 veces (8s + 20s). Si fallan ambos, el SKU queda en `failed`.
+- Para barridos masivos, aumentar `delay_ms` a 2500 o 5000.
+- En operación normal (webhooks aislados), no debería pasar.
 
-Por defecto, la aplicación aplica la regla:
-```
-Stock MercadoLibre = Stock Shopify - 1 (mínimo 0)
-```
+### ML rechaza con `item.variations.price.different`
+- Causa: intentaste actualizar UNA variante con un precio distinto al resto. ML no lo permite.
+- Solución: el código actual usa `updateItemVariationsPrices` (batch). Si igual aparece, el override de SKU para un item multi-variation va a quedar al max común. Usar override de familia.
 
-Puedes cambiar el offset editando la variable `STOCK_OFFSET` en el archivo `.env`:
+### El reconciliador "corrigió" un precio que yo cambié manualmente
+- Si editaste precio directo en ML/Falabella Seller, el sync lo sobreescribe (Shopify es fuente de verdad).
+- Para que un precio quede permanente: crear override desde el dashboard.
 
-- `STOCK_OFFSET=1` → Resta 1 unidad
-- `STOCK_OFFSET=2` → Resta 2 unidades
-- `STOCK_OFFSET=0` → Mismo stock en ambas plataformas
+### Render dice "Deploy failed"
+- Mirar logs del deploy. Causas comunes:
+  - Falta env var requerida (zod falla validación al arranque).
+  - Error de imports tras un cambio.
+- Soluciones:
+  - Verificar `.env.example` vs Render Environment.
+  - Rollback al commit previo si el bug es grave (Render Manual Deploy → seleccionar commit).
 
-## Automatización
+---
 
-### Usando Cron (Linux/Mac)
+## Arquitectura de DB
 
-Para ejecutar la sincronización automáticamente cada hora:
+| Tabla | Función |
+|---|---|
+| `sku_mapping` | SKU ↔ shopify_variant_id / ml_item_id / ml_variation_id / falabella_seller_sku |
+| `platform_state` | Último valor sincronizado por (sku, platform) — para debounce |
+| `webhook_events` | Audit log de webhooks entrantes — idempotencia por delivery_id |
+| `marketplace_orders` + `_items` | Estado de procesamiento por orden externa |
+| `stock_events` | Log append-only de cambios de stock (auditoría) |
+| `sku_locks` | Locks distribuidos por SKU (anti-race) |
+| `price_overrides` | Excepciones a la regla general por SKU o familia |
+| `_migrations` | Control de migraciones aplicadas |
 
-```bash
-crontab -e
-```
+---
 
-Agrega:
-```cron
-0 * * * * cd /ruta/a/mercadolibre-sync && node index.js >> sync.log 2>&1
-```
+## Repositorio
 
-### Usando Task Scheduler (Windows)
+- `webhook-server.js` — entrypoint, monta routers, atiende webhooks.
+- `shopify-api.js`, `mercadolibre-api.js`, `falabella-api.js` — clientes HTTP de cada plataforma.
+- `src/config.js` — schema zod de envs.
+- `src/logger.js` — pino estructurado.
+- `src/db/` — conexión Postgres, migraciones SQL, repositorios.
+- `src/services/` — lógica de negocio (price, price-override, price-sync, sku-cache, reconciler).
+- `src/middleware/` — HMAC, basic-auth, request-id.
+- `src/routes/` — routers admin (skus, price-overrides, dashboard UI).
+- `src/ui/` — layout + vistas HTML.
 
-1. Abre Task Scheduler
-2. Crea una tarea básica
-3. Configura para ejecutar: `node index.js`
-4. Establece la frecuencia deseada
+Tests en `src/services/__tests__/`.
 
-### Usando GitHub Actions
+---
 
-Puedes crear un workflow que se ejecute periódicamente:
+## Deploy
 
-```yaml
-name: Sync Stock
-on:
-  schedule:
-    - cron: '0 * * * *'  # Cada hora
-  workflow_dispatch:
+Render auto-deploya en cada push a `main`. Para forzar deploy: Render dashboard → tu servicio → **Manual Deploy → Deploy latest commit**.
 
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-      - run: |
-          cd mercadolibre-sync
-          npm install
-          echo "${{ secrets.SHOPIFY_STORE_URL }}" > .env
-          # ... agregar todas las variables de entorno
-          npm start
-```
+Migraciones de DB se aplican manualmente con `npm run migrate` desde local (apuntando a la `DATABASE_URL` de prod).
 
-## Estructura del Proyecto
+---
 
-```
-mercadolibre-sync/
-├── index.js                 # Script principal de sincronización
-├── webhook-server.js        # Servidor para sincronización en tiempo real
-├── shopify-api.js          # Cliente de API de Shopify
-├── mercadolibre-api.js     # Cliente de API de MercadoLibre
-├── package.json            # Dependencias y scripts
-├── env.example             # Plantilla de configuración
-├── .env                    # Configuración real (no commitear)
-└── README.md               # Esta documentación
-```
+## Sobre los archivos legacy presentes
 
-## Solución de Problemas
+- `meli-sku-mapping.js` — tabla hardcoded inicial, usada solo por el script de seed y por `mercadolibre-api.getOrders` (reporting).
+- `index.js` — CLI de sync masivo, mantenido por compat.
+- `check-pending-orders.js` — catch-up de órdenes ML al arrancar. Controlado por `PENDING_ORDERS_LAST_HOURS`.
 
-### Error: "SHOPIFY_STORE_URL y SHOPIFY_ACCESS_TOKEN deben estar configurados"
-- Verifica que el archivo `.env` existe y tiene las variables correctas
-- Asegúrate de que no haya espacios extra en los valores
+No se usan en el hot path del runtime (handlers de webhook).
 
-### Error: "MELI_ACCESS_TOKEN debe estar configurado"
-- Verifica tus credenciales de MercadoLibre
-- Si el token expiró, obtén uno nuevo o deja que la app lo refresque automáticamente
-
-### Error 401 (No autorizado)
-- Verifica que los tokens sean válidos
-- Para Shopify, asegúrate de que el token tenga los permisos necesarios
-- Para MercadoLibre, la app intentará refrescar el token automáticamente
-
-### No encuentra productos por SKU
-- Verifica que los SKUs sean exactamente iguales en ambas plataformas
-- Los SKUs son case-sensitive
-- Asegúrate de que los productos estén activos en MercadoLibre
-
-## Notas Importantes
-
-- ⚠️ La sincronización es unidireccional: Shopify → MercadoLibre
-- ⚠️ El stock en MercadoLibre nunca será mayor que (Stock Shopify - OFFSET)
-- ⚠️ Si el stock calculado es negativo, se establecerá en 0
-- ⚠️ Solo se sincronizan productos que tienen SKU en ambas plataformas
-- ⚠️ Los productos deben estar activos en MercadoLibre para ser actualizados
+---
 
 ## Licencia
 
