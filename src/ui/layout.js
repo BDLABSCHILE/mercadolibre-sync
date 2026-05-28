@@ -134,12 +134,10 @@ export function layout({ title, content, active = '' }) {
   <!-- ============ HEADER ============ -->
   <header class="bg-white border-b border-line">
     <div class="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between gap-6">
-      <!-- Brand: Valiz logo + title -->
+      <!-- Brand: Valiz logo (sin fondo, flota) + title -->
       <div class="flex items-center gap-3">
-        <div class="w-11 h-11 rounded-xl bg-neutral-900 flex items-center justify-center shadow-lg overflow-hidden ring-1 ring-neutral-800">
-          <img src="/assets/valiz.png" alt="Valiz" class="w-full h-full object-contain p-1.5"
-            onerror="this.outerHTML='<span class=\\'text-white font-bold text-lg\\'>V</span>'">
-        </div>
+        <img src="/assets/valiz.png" alt="Valiz" class="h-10 w-auto"
+          onerror="this.outerHTML='<span class=\\'text-ink font-bold text-2xl\\'>V</span>'">
         <div>
           <h1 class="text-xl font-bold text-ink tracking-tight">Valiz <span class="text-brand-600">Sync</span></h1>
           <p class="text-xs text-ink-muted -mt-0.5">Stock & price sync · 3 canales</p>
