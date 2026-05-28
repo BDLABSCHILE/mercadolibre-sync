@@ -427,6 +427,9 @@ app.use(express.json());
 app.use('/admin/skus', adminSkusRouter);
 app.use('/admin/price-overrides', adminPriceOverridesRouter);
 
+// Assets estáticos del dashboard (logos, etc.). Sin auth porque son imágenes.
+app.use('/assets', express.static(path.join(__dirname, 'public'), { maxAge: '7d' }));
+
 // Dashboard UI HTML (basic auth con SYNC_ALL_SECRET). Clients en app.locals.
 app.locals.clients = { shopify, meli, falabella };
 app.use('/admin/ui', adminUiRouter);

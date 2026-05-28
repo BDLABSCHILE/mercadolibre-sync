@@ -1,17 +1,9 @@
 /**
- * Vistas HTML del dashboard. Cada función retorna el HTML del body.
- * El layout exterior lo agrega routes/admin-ui.js.
+ * Vistas HTML del dashboard.
  */
 
-import { esc, fmtCLP } from './layout.js';
+import { esc, fmtCLP, ML_LOGO, FB_LOGO } from './layout.js';
 
-/**
- * Página principal: tabla de SKUs con su estado en cada plataforma + overrides.
- *
- * @param {Array} rows - array de {sku, family, productTitle, shopifyPrice,
- *   targetBase, targetMl, mlOverride, mlSynced, targetFb, fbOverride, fbSynced}
- * @param {{ search?: string, family?: string }} filters
- */
 export function skusTable(rows, filters = {}) {
   const stats = {
     total: rows.length,
@@ -25,34 +17,45 @@ export function skusTable(rows, filters = {}) {
 
   const familyOptions = [...new Set(rows.map((r) => r.family).filter(Boolean))].sort();
 
-  const tbody = rows.length === 0
-    ? `<tr><td colspan="9" class="empty">No hay SKUs que coincidan con el filtro</td></tr>`
-    : rows.map((r) => skuRow(r)).join('');
-
   return `
-    <h2>SKUs <small class="small">(${stats.total} filtrados)</small></h2>
+    <div class="page-header">
+      <h2>Catálogo de SKUs</h2>
+      <span class="small">${stats.total} SKUs visibles</span>
+    </div>
 
     <div class="stat-grid">
-      <div class="stat"><div class="label">SKUs visibles</div><div class="value">${stats.total}</div></div>
-      <div class="stat"><div class="label">Con override ML</div><div class="value">${stats.withMlOverride}</div></div>
-      <div class="stat"><div class="label">Con override Falabella</div><div class="value">${stats.withFbOverride}</div></div>
-      <div class="stat"><div class="label">Con drift detectado</div><div class="value">${stats.drift}</div></div>
+      <div class="stat">
+        <div class="label">Total SKUs</div>
+        <div class="value">${stats.total}</div>
+      </div>
+      <div class="stat">
+        <div class="label">${ML_LOGO} Con override ML</div>
+        <div class="value">${stats.withMlOverride}</div>
+      </div>
+      <div class="stat">
+        <div class="label">${FB_LOGO} Con override Falabella</div>
+        <div class="value">${stats.withFbOverride}</div>
+      </div>
+      <div class="stat ${stats.drift > 0 ? 'accent' : ''}">
+        <div class="label">Drift detectado</div>
+        <div class="value">${stats.drift}</div>
+      </div>
     </div>
 
     <form class="toolbar" hx-get="/admin/ui/skus" hx-target="#skus-table-wrap" hx-swap="innerHTML" hx-trigger="change from:select, keyup changed delay:300ms from:input">
-      <input type="search" name="search" placeholder="Buscar SKU o producto..." value="${esc(filters.search || '')}" style="flex: 1; min-width: 200px;">
+      <input type="search" name="search" placeholder="🔍 Buscar SKU o producto..." value="${esc(filters.search || '')}">
       <select name="family">
-        <option value="">— Todas las familias —</option>
+        <option value="">Todas las familias</option>
         ${familyOptions.map((f) => `<option value="${esc(f)}" ${filters.family === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}
       </select>
       <select name="hasOverride">
-        <option value="">— Override: cualquiera —</option>
+        <option value="">Override: cualquiera</option>
         <option value="yes" ${filters.hasOverride === 'yes' ? 'selected' : ''}>Con override</option>
         <option value="no" ${filters.hasOverride === 'no' ? 'selected' : ''}>Sin override</option>
       </select>
       <select name="hasDrift">
-        <option value="">— Drift: cualquiera —</option>
-        <option value="yes" ${filters.hasDrift === 'yes' ? 'selected' : ''}>Con drift</option>
+        <option value="">Drift: cualquiera</option>
+        <option value="yes" ${filters.hasDrift === 'yes' ? 'selected' : ''}>Solo con drift</option>
       </select>
     </form>
 
@@ -66,11 +69,11 @@ export function skusTable(rows, filters = {}) {
 
 export function skusTableInner(rows) {
   if (rows.length === 0) {
-    return `<div class="empty">No hay SKUs que coincidan con el filtro</div>`;
+    return `<div class="table-wrap"><div class="empty">No hay SKUs que coincidan con el filtro</div></div>`;
   }
   return `
-    <figure>
-      <table role="grid">
+    <div class="table-wrap">
+      <table>
         <thead>
           <tr>
             <th>SKU</th>
@@ -78,8 +81,8 @@ export function skusTableInner(rows) {
             <th>Familia</th>
             <th class="right">Shopify</th>
             <th class="right">Target base</th>
-            <th class="right">ML target</th>
-            <th class="right">Falabella target</th>
+            <th class="right">${ML_LOGO} MercadoLibre</th>
+            <th class="right">${FB_LOGO} Falabella</th>
             <th>Overrides</th>
             <th></th>
           </tr>
@@ -88,25 +91,26 @@ export function skusTableInner(rows) {
           ${rows.map((r) => skuRow(r)).join('')}
         </tbody>
       </table>
-    </figure>
+    </div>
   `;
 }
 
 function skuRow(r) {
-  const mlBadge = mlBadgeFor(r);
-  const fbBadge = fbBadgeFor(r);
   return `
     <tr>
-      <td class="mono">${esc(r.sku)}</td>
+      <td class="mono"><strong>${esc(r.sku)}</strong></td>
       <td class="truncate" title="${esc(r.productTitle || '')}">${esc(r.productTitle || '—')}</td>
       <td>${r.family ? `<span class="badge dim">${esc(r.family)}</span>` : ''}</td>
-      <td class="right mono">${fmtCLP(r.shopifyPrice)}</td>
+      <td class="right price">${fmtCLP(r.shopifyPrice)}</td>
       <td class="right small">${fmtCLP(r.targetBase)}</td>
-      <td class="right">${mlBadge}</td>
-      <td class="right">${fbBadge}</td>
+      <td class="right">${platformCell(r, 'ml')}</td>
+      <td class="right">${platformCell(r, 'fb')}</td>
       <td>${overrideBadges(r)}</td>
       <td>
-        <button class="ghost" hx-get="/admin/ui/skus/${encodeURIComponent(r.sku)}/edit" hx-target="#override-dialog" hx-swap="innerHTML" onclick="document.getElementById('override-dialog').showModal()">
+        <button class="ghost icon" title="Editar overrides"
+          hx-get="/admin/ui/skus/${encodeURIComponent(r.sku)}/edit"
+          hx-target="#override-dialog" hx-swap="innerHTML"
+          onclick="document.getElementById('override-dialog').showModal()">
           ✏️
         </button>
       </td>
@@ -114,69 +118,90 @@ function skuRow(r) {
   `;
 }
 
-function mlBadgeFor(r) {
-  if (r.targetMl == null) return `<span class="badge dim">sin link ML</span>`;
-  if (r.mlSynced == null) return `<span class="mono">${fmtCLP(r.targetMl)}</span> <span class="badge dim">no sync</span>`;
-  if (r.mlSynced === r.targetMl) return `<span class="mono">${fmtCLP(r.targetMl)}</span> <span class="badge ok">✓</span>`;
-  return `<span class="mono">${fmtCLP(r.targetMl)}</span> <span class="badge warn" title="ML actual: ${fmtCLP(r.mlSynced)}">drift</span>`;
-}
+function platformCell(r, kind) {
+  const target = kind === 'ml' ? r.targetMl : r.targetFb;
+  const synced = kind === 'ml' ? r.mlSynced : r.fbSynced;
+  const label = kind === 'ml' ? 'ML' : 'FB';
 
-function fbBadgeFor(r) {
-  if (r.targetFb == null) return `<span class="badge dim">sin link FB</span>`;
-  if (r.fbSynced == null) return `<span class="mono">${fmtCLP(r.targetFb)}</span> <span class="badge dim">no sync</span>`;
-  if (r.fbSynced === r.targetFb) return `<span class="mono">${fmtCLP(r.targetFb)}</span> <span class="badge ok">✓</span>`;
-  return `<span class="mono">${fmtCLP(r.targetFb)}</span> <span class="badge warn" title="FB actual: ${fmtCLP(r.fbSynced)}">drift</span>`;
+  if (target == null) {
+    return `<span class="badge dim">sin link</span>`;
+  }
+  if (synced == null) {
+    return `<span class="price-cell"><span class="price">${fmtCLP(target)}</span> <span class="badge dim">no sync</span></span>`;
+  }
+  if (synced === target) {
+    return `<span class="price-cell"><span class="price">${fmtCLP(target)}</span> <span class="badge ok">✓</span></span>`;
+  }
+  return `<span class="price-cell"><span class="price">${fmtCLP(target)}</span> <span class="badge warn" title="${label} actual: ${fmtCLP(synced)}">drift</span></span>`;
 }
 
 function overrideBadges(r) {
   const parts = [];
-  if (r.mlOverride) parts.push(`<span class="badge warn" title="${esc(overrideTooltip(r.mlOverride))}">ML</span>`);
-  if (r.fbOverride) parts.push(`<span class="badge warn" title="${esc(overrideTooltip(r.fbOverride))}">FB</span>`);
+  if (r.mlOverride) parts.push(`<span class="badge ml" title="${esc(overrideTooltip(r.mlOverride))}">${ML_LOGO}<span>ML</span></span>`);
+  if (r.fbOverride) parts.push(`<span class="badge fb" title="${esc(overrideTooltip(r.fbOverride))}">${FB_LOGO}<span>FB</span></span>`);
   return parts.length === 0 ? '<span class="small">—</span>' : parts.join(' ');
 }
 
 function overrideTooltip(o) {
   if (!o) return '';
-  return `${o.scope}=${o.key} ${o.overrideType}=${o.value}${o.note ? ' · ' + o.note : ''}`;
+  const typeLabel = {
+    absolute: 'Precio absoluto',
+    discount_fixed: 'Descuento $',
+    discount_percent: 'Descuento %',
+    custom_markup: 'Markup custom',
+  }[o.overrideType] || o.overrideType;
+  return `${typeLabel} = ${o.value} (${o.scope}=${o.key})${o.note ? ' · ' + o.note : ''}`;
 }
 
-/**
- * Modal de edición de overrides para un SKU específico.
- */
 export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBase, mlOverride, fbOverride, targetMl, targetFb, mlSiblingsCount = 0, syncStartedFor }) {
   const banner = syncStartedFor
-    ? `<div style="background:#d1fadf;color:#027a48;padding:0.7rem 1rem;border-radius:6px;margin-bottom:1rem;">
-         ✅ Override creado. Sync de precio iniciado para <strong>${esc(syncStartedFor)}</strong>.
-         En ~30 seg los precios en ML/Falabella están actualizados (revisá logs de Render para detalle).
+    ? `<div class="banner success">
+         ✅ <strong>Override creado.</strong> Sync iniciado para ${esc(syncStartedFor)}.
+         En ~30 seg los precios en ML/Falabella estarán actualizados.
        </div>`
     : '';
 
-  // Warning: si el SKU tiene hermanas en ML, override scope=sku solo afecta
-  // Falabella; ML obliga a precio común y va a tomar el max entre variantes.
   const mlSiblingsWarning = mlSiblingsCount > 1
-    ? `<div style="background:#fef0c7;color:#b54708;padding:0.7rem 1rem;border-radius:6px;margin:1rem 0;font-size:0.85rem;">
+    ? `<div class="banner warn">
          ⚠️ <strong>Este SKU comparte item ML con ${mlSiblingsCount - 1} hermana(s).</strong>
-         ML obliga a que todas las variantes del mismo item tengan el mismo precio.
-         <ul style="margin:0.4rem 0 0 1rem;">
-           <li><strong>Override <em>SKU</em></strong>: solo afecta Falabella. En ML las ${mlSiblingsCount} variantes se publican al precio más alto entre ellas.</li>
-           <li><strong>Override <em>familia ${esc(family || '')}</em></strong>: afecta a las ${mlSiblingsCount} variantes en ML y Falabella. Lo más natural.</li>
+         MercadoLibre obliga a que todas las variantes del item tengan el mismo precio.
+         <ul style="margin: 0.5rem 0 0 1.2rem;">
+           <li>Override <strong><em>SKU</em></strong>: solo afecta Falabella. ML toma el precio más alto.</li>
+           <li>Override <strong><em>familia ${esc(family || '')}</em></strong>: afecta las ${mlSiblingsCount} variantes en ML y Falabella.</li>
          </ul>
        </div>`
     : '';
+
   return `
     <article>
       <header>
-        <a href="#" aria-label="Close" class="close" onclick="document.getElementById('override-dialog').close(); return false;"></a>
-        <strong>${esc(sku)}</strong> — ${esc(productTitle || '')}
+        <strong>${esc(sku)}</strong>
+        <button class="close" aria-label="Cerrar" onclick="document.getElementById('override-dialog').close()"></button>
       </header>
+
+      <p class="small" style="margin-top:-0.5rem">${esc(productTitle || '')}</p>
 
       ${banner}
 
       <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr);">
-        <div class="stat"><div class="label">Familia</div><div class="value" style="font-size: 1rem;">${esc(family || '—')}</div></div>
-        <div class="stat"><div class="label">Shopify</div><div class="value" style="font-size: 1rem;">${fmtCLP(shopifyPrice)}</div></div>
-        <div class="stat"><div class="label">Target base (×1.3 → 990)</div><div class="value" style="font-size: 1rem;">${fmtCLP(targetBase)}</div></div>
-        <div class="stat"><div class="label">Target efectivo</div><div class="value" style="font-size: 1rem;">ML ${fmtCLP(targetMl)} / FB ${fmtCLP(targetFb)}</div></div>
+        <div class="stat">
+          <div class="label">Familia</div>
+          <div class="value" style="font-size: 1.3rem;">${esc(family || '—')}</div>
+        </div>
+        <div class="stat">
+          <div class="label">Shopify</div>
+          <div class="value" style="font-size: 1.3rem;">${fmtCLP(shopifyPrice)}</div>
+        </div>
+        <div class="stat">
+          <div class="label">Target base</div>
+          <div class="value" style="font-size: 1.3rem;">${fmtCLP(targetBase)}</div>
+        </div>
+        <div class="stat accent">
+          <div class="label">Efectivo</div>
+          <div class="value" style="font-size: 1rem; line-height: 1.3;">
+            ML ${fmtCLP(targetMl)}<br>FB ${fmtCLP(targetFb)}
+          </div>
+        </div>
       </div>
 
       ${mlOverride || fbOverride ? `
@@ -212,7 +237,7 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
           <label>
             Tipo
             <select name="overrideType" required>
-              <option value="discount_fixed">Descuento $ (resto N al target)</option>
+              <option value="discount_fixed">Descuento $ (resto N pesos al target)</option>
               <option value="discount_percent">Descuento % (-N% del target)</option>
               <option value="absolute">Precio absoluto</option>
               <option value="custom_markup">Markup custom (shopify × N)</option>
@@ -220,7 +245,7 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
           </label>
           <label>
             Valor
-            <input type="number" name="value" step="0.01" required placeholder="ej. 3000 (descuento $3.000)">
+            <input type="number" name="value" step="0.01" required placeholder="ej. 3000">
           </label>
         </div>
 
@@ -238,8 +263,8 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
         </label>
 
         <footer>
-          <button type="submit">Crear override</button>
           <button type="button" class="ghost" onclick="document.getElementById('override-dialog').close()">Cancelar</button>
+          <button type="submit" class="accent">Crear override</button>
         </footer>
       </form>
     </article>
@@ -247,7 +272,8 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
 }
 
 function activeOverrideRow(o, platform) {
-  const platformLabel = platform === 'mercadolibre' ? 'ML' : 'FB';
+  const platformLabel = platform === 'mercadolibre' ? 'MercadoLibre' : 'Falabella';
+  const platformLogo = platform === 'mercadolibre' ? ML_LOGO : FB_LOGO;
   const typeLabel = {
     absolute: 'Precio absoluto',
     discount_fixed: 'Descuento $',
@@ -256,11 +282,12 @@ function activeOverrideRow(o, platform) {
   }[o.overrideType] || o.overrideType;
 
   return `
-    <div style="background: #fef0c7; padding: 0.8rem; border-radius: 6px; margin-bottom: 0.6rem;">
-      <strong>${platformLabel}</strong>: ${esc(typeLabel)} = <strong>${o.value}</strong>
-      <span class="small">(scope: ${esc(o.scope)}, key: <span class="mono">${esc(o.key)}</span>)</span>
-      ${o.note ? `<div class="small">${esc(o.note)}</div>` : ''}
-      <button class="danger" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; margin-top: 0.4rem;"
+    <div style="background: var(--warning-soft); padding: 0.9rem 1.1rem; border-radius: var(--radius-sm); margin-bottom: 0.7rem; border-left: 3px solid var(--warning);">
+      <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.3rem;">
+        ${platformLogo} <strong>${platformLabel}</strong>: ${esc(typeLabel)} = <strong>${o.value}</strong>
+      </div>
+      <div class="small" style="color:var(--ink-soft)">scope: ${esc(o.scope)} · key: <span class="mono">${esc(o.key)}</span>${o.note ? ` · ${esc(o.note)}` : ''}</div>
+      <button class="danger" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; margin-top: 0.5rem;"
         hx-delete="/admin/ui/overrides/${o.id}"
         hx-confirm="¿Eliminar este override?"
         hx-target="#override-dialog" hx-swap="innerHTML">
@@ -270,36 +297,45 @@ function activeOverrideRow(o, platform) {
   `;
 }
 
-/**
- * Página /admin/ui/overrides — lista de overrides activos.
- */
 export function overridesList(items) {
   const tbody = items.length === 0
     ? `<tr><td colspan="8" class="empty">No hay overrides activos</td></tr>`
-    : items.map((o) => `
-        <tr>
-          <td class="mono">#${o.id}</td>
-          <td><span class="badge dim">${esc(o.scope)}</span> <span class="mono">${esc(o.key)}</span></td>
-          <td>${esc(o.platform)}</td>
-          <td>${esc(o.overrideType)}</td>
-          <td class="right mono">${o.value}</td>
-          <td class="small">${o.validFrom ? new Date(o.validFrom).toLocaleString('es-CL') : '—'} → ${o.validUntil ? new Date(o.validUntil).toLocaleString('es-CL') : 'permanente'}</td>
-          <td class="truncate small">${esc(o.note || '—')}</td>
-          <td>
-            <button class="danger" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;"
-              hx-delete="/admin/ui/overrides/${o.id}"
-              hx-confirm="¿Eliminar este override?"
-              hx-target="closest tr" hx-swap="outerHTML">
-              Eliminar
-            </button>
-          </td>
-        </tr>
-      `).join('');
+    : items.map((o) => {
+        const platformLogo = o.platform === 'mercadolibre' ? ML_LOGO : o.platform === 'falabella' ? FB_LOGO : '';
+        const typeLabel = {
+          absolute: 'Precio absoluto',
+          discount_fixed: 'Descuento $',
+          discount_percent: 'Descuento %',
+          custom_markup: 'Markup custom',
+        }[o.overrideType] || o.overrideType;
+        return `
+          <tr>
+            <td class="mono"><strong>#${o.id}</strong></td>
+            <td><span class="badge dim">${esc(o.scope)}</span> <span class="mono">${esc(o.key)}</span></td>
+            <td><span style="display:inline-flex;align-items:center;gap:0.3rem">${platformLogo}${esc(o.platform === 'all' ? 'Ambas' : o.platform === 'mercadolibre' ? 'ML' : 'Falabella')}</span></td>
+            <td>${esc(typeLabel)}</td>
+            <td class="right mono"><strong>${o.value}</strong></td>
+            <td class="small">${o.validFrom ? new Date(o.validFrom).toLocaleDateString('es-CL') : '—'} → ${o.validUntil ? new Date(o.validUntil).toLocaleDateString('es-CL') : 'permanente'}</td>
+            <td class="truncate small">${esc(o.note || '—')}</td>
+            <td>
+              <button class="danger" style="font-size: 0.78rem; padding: 0.3rem 0.6rem;"
+                hx-delete="/admin/ui/overrides/${o.id}"
+                hx-confirm="¿Eliminar este override?"
+                hx-target="closest tr" hx-swap="outerHTML">
+                Eliminar
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
   return `
-    <h2>Overrides activos <small class="small">(${items.length})</small></h2>
-    <p class="small">Lista de todos los overrides activos. Los inactivos / vencidos están ocultos.</p>
-    <figure>
-      <table role="grid">
+    <div class="page-header">
+      <h2>Overrides activos</h2>
+      <span class="small">${items.length} reglas activas</span>
+    </div>
+    <p class="small" style="margin-bottom:1.2rem">Excepciones a la regla general de precios. Los inactivos y vencidos están ocultos.</p>
+    <div class="table-wrap">
+      <table>
         <thead>
           <tr>
             <th>ID</th>
@@ -314,38 +350,43 @@ export function overridesList(items) {
         </thead>
         <tbody>${tbody}</tbody>
       </table>
-    </figure>
+    </div>
   `;
 }
 
-/**
- * Página /admin/ui/operations — botones para disparar barridos/reconciliación.
- */
 export function operationsPage() {
   return `
-    <h2>Operaciones</h2>
-    <p class="small">Acciones administrativas globales. Cada operación corre en background; revisa los logs de Render para ver el progreso.</p>
+    <div class="page-header">
+      <h2>Operaciones</h2>
+      <span class="small">Acciones administrativas globales</span>
+    </div>
+
+    <p class="small">Cada operación corre en background; los resultados aparecen abajo y los detalles van a los logs de Render.</p>
 
     <article>
-      <header><strong>Sincronizar precios (barrido masivo)</strong></header>
-      <p>Recorre todos los productos Shopify y propaga a ML y Falabella aplicando la regla general + overrides.</p>
-      <button hx-post="/admin/ui/ops/sync-all-prices?dry_run=true" hx-target="#op-result" hx-swap="innerHTML">
-        Dry-run (no escribe)
-      </button>
-      <button hx-post="/admin/ui/ops/sync-all-prices" hx-target="#op-result" hx-swap="innerHTML" hx-confirm="¿Confirmar barrido real (escribe en marketplaces)?">
-        Barrido REAL
-      </button>
+      <header>🔄 Sincronizar precios (barrido masivo)</header>
+      <p>Recorre todos los productos de Shopify y propaga los precios a ${ML_LOGO} MercadoLibre y ${FB_LOGO} Falabella aplicando la regla general (× 1.3 → 990) + overrides activos.</p>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.8rem;">
+        <button class="ghost" hx-post="/admin/ui/ops/sync-all-prices?dry_run=true" hx-target="#op-result" hx-swap="innerHTML">
+          Dry-run (no escribe)
+        </button>
+        <button class="accent" hx-post="/admin/ui/ops/sync-all-prices" hx-target="#op-result" hx-swap="innerHTML" hx-confirm="¿Confirmar barrido REAL? Va a actualizar precios en los marketplaces.">
+          Ejecutar barrido REAL
+        </button>
+      </div>
     </article>
 
     <article>
-      <header><strong>Reconciliar stock</strong></header>
-      <p>Detecta drift entre Shopify (fuente de verdad) y los marketplaces, y auto-corrige.</p>
-      <button hx-post="/admin/ui/ops/reconcile-stock?dry_run=true" hx-target="#op-result" hx-swap="innerHTML">
-        Dry-run (no escribe)
-      </button>
-      <button hx-post="/admin/ui/ops/reconcile-stock" hx-target="#op-result" hx-swap="innerHTML" hx-confirm="¿Confirmar reconciliación REAL?">
-        Reconciliar REAL
-      </button>
+      <header>🧹 Reconciliar stock</header>
+      <p>Detecta drift entre Shopify (fuente de verdad) y los marketplaces, y auto-corrige escribiendo <code>max(0, stock_shopify - 1)</code>.</p>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.8rem;">
+        <button class="ghost" hx-post="/admin/ui/ops/reconcile-stock?dry_run=true" hx-target="#op-result" hx-swap="innerHTML">
+          Dry-run
+        </button>
+        <button class="accent" hx-post="/admin/ui/ops/reconcile-stock" hx-target="#op-result" hx-swap="innerHTML" hx-confirm="¿Confirmar reconciliación REAL?">
+          Reconciliar REAL
+        </button>
+      </div>
     </article>
 
     <div id="op-result"></div>
@@ -354,9 +395,12 @@ export function operationsPage() {
 
 export function operationResult({ title, summary, isDryRun }) {
   return `
-    <article style="background: #f0f9ff; border: 1px solid #b9e6fe;">
-      <header><strong>${esc(title)}</strong> ${isDryRun ? '<span class="badge dim">DRY RUN</span>' : '<span class="badge ok">REAL</span>'}</header>
-      <pre style="font-size: 0.8rem; max-height: 400px; overflow: auto;">${esc(JSON.stringify(summary, null, 2))}</pre>
+    <article style="background: var(--info-soft); border-color: var(--info);">
+      <header>
+        <span>${esc(title)}</span>
+        ${isDryRun ? '<span class="badge info">DRY RUN</span>' : '<span class="badge ok">REAL</span>'}
+      </header>
+      <pre style="font-size: 0.78rem; max-height: 400px; overflow: auto; background: white; padding: 0.8rem; border-radius: var(--radius-sm); border: 1px solid var(--beige);">${esc(JSON.stringify(summary, null, 2))}</pre>
     </article>
   `;
 }
