@@ -289,9 +289,12 @@ export function layout({ title, content, active = '' }) {
         <span class="text-line">·</span>
         <span>Sync automático activo</span>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3">
         <span>Valiz Sync · Designed & built by</span>
-        <span class="font-bold text-ink-soft tracking-tight">BD<span class="text-copper-600 font-semibold tracking-widest ml-0.5">LABS</span></span>
+        <a href="#" class="hover:opacity-80 transition-opacity flex items-center" title="BD LABS">
+          <img src="/assets/bdlabs-negro.png" alt="BD LABS" class="h-12 w-auto"
+            onerror="this.outerHTML='<span class=\\'font-bold text-ink-soft tracking-tight\\'>BD<span class=\\'text-copper-600 font-semibold tracking-widest ml-0.5\\'>LABS</span></span>'">
+        </a>
       </div>
     </div>
   </footer>
