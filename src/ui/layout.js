@@ -518,7 +518,7 @@ export function layout({ title, content, active = '' }) {
       </div>
       <div class="links">
         <a href="/admin/ui" class="${active === 'skus' ? 'active' : ''}">SKUs</a>
-        <a href="/admin/ui/overrides" class="${active === 'overrides' ? 'active' : ''}">Overrides</a>
+        <a href="/admin/ui/overrides" class="${active === 'overrides' ? 'active' : ''}">Ajustes manuales</a>
         <a href="/admin/ui/operations" class="${active === 'ops' ? 'active' : ''}">Operaciones</a>
       </div>
       <div class="platforms">
