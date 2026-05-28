@@ -29,11 +29,11 @@ export function skusTable(rows, filters = {}) {
         <div class="value">${stats.total}</div>
       </div>
       <div class="stat">
-        <div class="label">${ML_LOGO} Con override ML</div>
+        <div class="label">${ML_LOGO} Con ajuste ML</div>
         <div class="value">${stats.withMlOverride}</div>
       </div>
       <div class="stat">
-        <div class="label">${FB_LOGO} Con override Falabella</div>
+        <div class="label">${FB_LOGO} Con ajuste Falabella</div>
         <div class="value">${stats.withFbOverride}</div>
       </div>
       <div class="stat ${stats.drift > 0 ? 'accent' : ''}">
@@ -49,9 +49,9 @@ export function skusTable(rows, filters = {}) {
         ${familyOptions.map((f) => `<option value="${esc(f)}" ${filters.family === f ? 'selected' : ''}>${esc(f)}</option>`).join('')}
       </select>
       <select name="hasOverride">
-        <option value="">Override: cualquiera</option>
-        <option value="yes" ${filters.hasOverride === 'yes' ? 'selected' : ''}>Con override</option>
-        <option value="no" ${filters.hasOverride === 'no' ? 'selected' : ''}>Sin override</option>
+        <option value="">Ajuste: cualquiera</option>
+        <option value="yes" ${filters.hasOverride === 'yes' ? 'selected' : ''}>Con ajuste</option>
+        <option value="no" ${filters.hasOverride === 'no' ? 'selected' : ''}>Sin ajuste</option>
       </select>
       <select name="hasDrift">
         <option value="">Drift: cualquiera</option>
@@ -83,7 +83,7 @@ export function skusTableInner(rows) {
             <th class="right">Target base</th>
             <th class="right">${ML_LOGO} MercadoLibre</th>
             <th class="right">${FB_LOGO} Falabella</th>
-            <th>Overrides</th>
+            <th>Ajustes</th>
             <th></th>
           </tr>
         </thead>
@@ -107,7 +107,7 @@ function skuRow(r) {
       <td class="right">${platformCell(r, 'fb')}</td>
       <td>${overrideBadges(r)}</td>
       <td>
-        <button class="ghost icon" title="Editar overrides"
+        <button class="ghost icon" title="Editar ajustes manuales"
           hx-get="/admin/ui/skus/${encodeURIComponent(r.sku)}/edit"
           hx-target="#override-dialog" hx-swap="innerHTML"
           onclick="document.getElementById('override-dialog').showModal()">
@@ -156,7 +156,7 @@ function overrideTooltip(o) {
 export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBase, mlOverride, fbOverride, targetMl, targetFb, mlSiblingsCount = 0, syncStartedFor }) {
   const banner = syncStartedFor
     ? `<div class="banner success">
-         ✅ <strong>Override creado.</strong> Sync iniciado para ${esc(syncStartedFor)}.
+         ✅ <strong>Ajuste creado.</strong> Sync iniciado para ${esc(syncStartedFor)}.
          En ~30 seg los precios en ML/Falabella estarán actualizados.
        </div>`
     : '';
@@ -166,8 +166,8 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
          ⚠️ <strong>Este SKU comparte item ML con ${mlSiblingsCount - 1} hermana(s).</strong>
          MercadoLibre obliga a que todas las variantes del item tengan el mismo precio.
          <ul style="margin: 0.5rem 0 0 1.2rem;">
-           <li>Override <strong><em>SKU</em></strong>: solo afecta Falabella. ML toma el precio más alto.</li>
-           <li>Override <strong><em>familia ${esc(family || '')}</em></strong>: afecta las ${mlSiblingsCount} variantes en ML y Falabella.</li>
+           <li>Ajuste a este <strong><em>SKU</em></strong>: solo afecta Falabella. ML toma el precio más alto entre las variantes.</li>
+           <li>Ajuste a la <strong><em>familia ${esc(family || '')}</em></strong>: afecta las ${mlSiblingsCount} variantes en ML y Falabella.</li>
          </ul>
        </div>`
     : '';
@@ -205,12 +205,12 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
       </div>
 
       ${mlOverride || fbOverride ? `
-        <h4>Overrides activos</h4>
+        <h4>Ajustes activos</h4>
         ${mlOverride ? activeOverrideRow(mlOverride, 'mercadolibre') : ''}
         ${fbOverride ? activeOverrideRow(fbOverride, 'falabella') : ''}
       ` : ''}
 
-      <h4>Crear nuevo override</h4>
+      <h4>Crear nuevo ajuste</h4>
       ${mlSiblingsWarning}
       <form hx-post="/admin/ui/overrides/create" hx-target="#override-dialog" hx-swap="innerHTML">
         <input type="hidden" name="returnSku" value="${esc(sku)}">
@@ -264,7 +264,7 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
 
         <footer>
           <button type="button" class="ghost" onclick="document.getElementById('override-dialog').close()">Cancelar</button>
-          <button type="submit" class="accent">Crear override</button>
+          <button type="submit" class="accent">Crear ajuste</button>
         </footer>
       </form>
     </article>
@@ -289,7 +289,7 @@ function activeOverrideRow(o, platform) {
       <div class="small" style="color:var(--ink-soft)">scope: ${esc(o.scope)} · key: <span class="mono">${esc(o.key)}</span>${o.note ? ` · ${esc(o.note)}` : ''}</div>
       <button class="danger" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; margin-top: 0.5rem;"
         hx-delete="/admin/ui/overrides/${o.id}"
-        hx-confirm="¿Eliminar este override?"
+        hx-confirm="¿Eliminar este ajuste?"
         hx-target="#override-dialog" hx-swap="innerHTML">
         Eliminar
       </button>
@@ -320,7 +320,7 @@ export function overridesList(items) {
             <td>
               <button class="danger" style="font-size: 0.78rem; padding: 0.3rem 0.6rem;"
                 hx-delete="/admin/ui/overrides/${o.id}"
-                hx-confirm="¿Eliminar este override?"
+                hx-confirm="¿Eliminar este ajuste?"
                 hx-target="closest tr" hx-swap="outerHTML">
                 Eliminar
               </button>
@@ -330,10 +330,10 @@ export function overridesList(items) {
       }).join('');
   return `
     <div class="page-header">
-      <h2>Overrides activos</h2>
+      <h2>Ajustes manuales activos</h2>
       <span class="small">${items.length} reglas activas</span>
     </div>
-    <p class="small" style="margin-bottom:1.2rem">Excepciones a la regla general de precios. Los inactivos y vencidos están ocultos.</p>
+    <p class="small" style="margin-bottom:1.2rem">Reglas que vos creaste y que sobrescriben la fórmula general (precio Shopify × 1.3 → terminación 990). Los inactivos y vencidos están ocultos.</p>
     <div class="table-wrap">
       <table>
         <thead>

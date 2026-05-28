@@ -255,7 +255,7 @@ router.get('/overrides', async (req, res, next) => {
   try {
     const items = await priceOverrideRepo.listAll({ activeOnly: true });
     res.type('html').send(layout({
-      title: 'Overrides',
+      title: 'Ajustes manuales',
       content: views.overridesList(items),
       active: 'overrides',
     }));
