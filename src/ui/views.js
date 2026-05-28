@@ -143,13 +143,21 @@ function overrideTooltip(o) {
 /**
  * Modal de edición de overrides para un SKU específico.
  */
-export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBase, mlOverride, fbOverride, targetMl, targetFb }) {
+export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBase, mlOverride, fbOverride, targetMl, targetFb, syncStartedFor }) {
+  const banner = syncStartedFor
+    ? `<div style="background:#d1fadf;color:#027a48;padding:0.7rem 1rem;border-radius:6px;margin-bottom:1rem;">
+         ✅ Override creado. Sync de precio iniciado para <strong>${esc(syncStartedFor)}</strong>.
+         En ~30 seg los precios en ML/Falabella están actualizados (revisá logs de Render para detalle).
+       </div>`
+    : '';
   return `
     <article>
       <header>
         <a href="#" aria-label="Close" class="close" onclick="document.getElementById('override-dialog').close(); return false;"></a>
         <strong>${esc(sku)}</strong> — ${esc(productTitle || '')}
       </header>
+
+      ${banner}
 
       <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr);">
         <div class="stat"><div class="label">Familia</div><div class="value" style="font-size: 1rem;">${esc(family || '—')}</div></div>

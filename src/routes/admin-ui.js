@@ -163,19 +163,28 @@ router.get('/skus/:sku/edit', async (req, res, next) => {
       sku, family, shopifyPrice, productTitle, targetBase,
       targetMl: mlEff.target, mlOverride: mlEff.override,
       targetFb: fbEff.target, fbOverride: fbEff.override,
+      syncStartedFor: req._syncStartedFor || null,
     }));
   } catch (err) { next(err); }
 });
 
 /**
- * POST /admin/ui/overrides/create — crea override desde el form
+ * POST /admin/ui/overrides/create — crea override desde el form Y dispara sync
+ *
+ * El sync va en background (setImmediate) para responder al usuario rápido.
+ * - scope=sku   → syncAllPricesFromShopify con filtro skus=[sku]
+ * - scope=family → syncAllPricesFromShopify con filtro skuPrefixes=[family+'-']
+ *
+ * En ambos casos los logs de Render muestran el progreso. El modal se cierra y
+ * la tabla principal puede refrescarse para ver el nuevo precio.
  */
 router.post('/overrides/create', async (req, res, next) => {
   try {
     const b = req.body;
+    const family = familyForSku(b.returnSku);
     const input = {
       scope: b.scope,
-      key: b.scope === 'family' ? familyForSku(b.returnSku) : b.returnSku,
+      key: b.scope === 'family' ? family : b.returnSku,
       platform: b.platform,
       overrideType: b.overrideType,
       value: Number(b.value),
@@ -184,12 +193,32 @@ router.post('/overrides/create', async (req, res, next) => {
       note: b.note || null,
       createdBy: req.uiUser || 'admin-ui',
     };
-    await priceOverrideRepo.create(input);
+    const created = await priceOverrideRepo.create(input);
     await overrideCache.invalidate();
-    logger.info({ ...input }, 'override creado via UI');
+    logger.info({ ...input, id: created.id }, 'override creado via UI');
 
-    // Re-renderizar el modal con el override aplicado
+    // Disparar sync en background con el filtro apropiado.
+    const clients = getClients(req);
+    const syncOpts = b.scope === 'family'
+      ? { skuPrefixes: [family + '-'], reason: 'admin_ui_override_family' }
+      : { skus: [b.returnSku], reason: 'admin_ui_override_sku' };
+    setImmediate(async () => {
+      try {
+        logger.info({ overrideId: created.id, ...syncOpts }, 'auto-sync tras crear override: inicio');
+        const summary = await syncAllPricesFromShopify(clients.shopify, clients, {
+          dryRun: false,
+          delayMs: 1500,
+          ...syncOpts,
+        });
+        logger.info({ overrideId: created.id, ...summary }, 'auto-sync tras crear override: completado');
+      } catch (e) {
+        logger.error({ overrideId: created.id, err: e.message }, 'auto-sync tras crear override: error');
+      }
+    });
+
+    // Re-renderizar el modal con el override aplicado + banner de éxito.
     req.params = { sku: b.returnSku };
+    req._syncStartedFor = b.scope === 'family' ? `familia ${family}` : `SKU ${b.returnSku}`;
     return router.handle(Object.assign(req, { method: 'GET', url: `/skus/${encodeURIComponent(b.returnSku)}/edit` }), res, next);
   } catch (err) { next(err); }
 });
