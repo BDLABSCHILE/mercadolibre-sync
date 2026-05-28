@@ -40,6 +40,87 @@ export const ICON = {
   refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>`,
 };
 
+// ============ BD LABS LOGO (SVG inline) ============
+// Diseño basado en el logo original de Benja: { B [columna tipográfica] D }
+//   - Curly braces representan código/programación
+//   - B y D iniciales con stroke fino (sans-serif outlined)
+//   - Columna central: dot + serif top + </> + serif bottom + dot
+//     (anatomía de letras "i" y "j" partidas por el code tag → "craft + code")
+//   - Acentos cobre en los dots, todo lo demás en azul profundo
+//   - Monoline, escalable, sin dependencia de PNG.
+export const BDLABS_LOGO_SVG = `<svg viewBox="0 0 220 150" xmlns="http://www.w3.org/2000/svg"
+  fill="none" stroke="#1E3A8A" stroke-width="2.2"
+  stroke-linecap="round" stroke-linejoin="round"
+  aria-label="BD LABS" class="h-10 w-auto">
+
+  <!-- Left curly brace { -->
+  <path d="M 50 28 Q 30 28 30 48 L 30 70 Q 30 76 18 76 Q 30 76 30 82 L 30 104 Q 30 124 50 124"/>
+
+  <!-- B letter (outlined, thin sans-serif) -->
+  <g>
+    <line x1="64" y1="60" x2="64" y2="100"/>
+    <path d="M 64 60 L 80 60 Q 88 60 88 68 Q 88 76 80 76 L 64 76"/>
+    <path d="M 64 78 L 82 78 Q 92 78 92 89 Q 92 100 82 100 L 64 100"/>
+  </g>
+
+  <!-- Center column: typographic flourish -->
+  <!-- Top dot (i tittle) - copper accent -->
+  <circle cx="110" cy="14" r="2.6" fill="#EA580C" stroke="none"/>
+
+  <!-- Top serif (anatomy of letter "i" - cap with feet) -->
+  <line x1="100" y1="30" x2="120" y2="30"/>
+  <line x1="110" y1="30" x2="110" y2="44"/>
+  <line x1="101" y1="27" x2="101" y2="33"/>
+  <line x1="119" y1="27" x2="119" y2="33"/>
+
+  <!-- </> code tag in middle -->
+  <g stroke-width="2">
+    <polyline points="100 58 88 76 100 94"/>
+    <line x1="106" y1="96" x2="116" y2="56"/>
+    <polyline points="122 58 134 76 122 94"/>
+  </g>
+
+  <!-- Bottom serif (anatomy of letter "j" - hook with dot below) -->
+  <path d="M 102 108 L 102 122 Q 102 132 110 132 Q 118 132 118 122 L 118 108"/>
+
+  <!-- Bottom dot (j tittle) - copper accent -->
+  <circle cx="110" cy="142" r="2.6" fill="#EA580C" stroke="none"/>
+
+  <!-- D letter (outlined) -->
+  <g>
+    <line x1="146" y1="60" x2="146" y2="100"/>
+    <path d="M 146 60 L 162 60 Q 178 60 178 80 Q 178 100 162 100 L 146 100"/>
+  </g>
+
+  <!-- Right curly brace } -->
+  <path d="M 170 28 Q 190 28 190 48 L 190 70 Q 190 76 202 76 Q 190 76 190 82 L 190 104 Q 190 124 170 124"/>
+</svg>`;
+
+// Versión compacta (sólo braces + B y D, sin columna central) — para footer/favicon/mobile.
+export const BDLABS_MARK_SVG = `<svg viewBox="0 0 120 100" xmlns="http://www.w3.org/2000/svg"
+  fill="none" stroke="#1E3A8A" stroke-width="2.4"
+  stroke-linecap="round" stroke-linejoin="round"
+  aria-label="BD LABS" class="h-6 w-auto">
+  <!-- Left brace -->
+  <path d="M 30 12 Q 14 12 14 28 L 14 44 Q 14 49 6 49 Q 14 49 14 54 L 14 70 Q 14 86 30 86"/>
+  <!-- B -->
+  <g>
+    <line x1="40" y1="36" x2="40" y2="64"/>
+    <path d="M 40 36 L 52 36 Q 58 36 58 42 Q 58 48 52 48 L 40 48"/>
+    <path d="M 40 50 L 54 50 Q 60 50 60 57 Q 60 64 54 64 L 40 64"/>
+  </g>
+  <!-- D -->
+  <g>
+    <line x1="68" y1="36" x2="68" y2="64"/>
+    <path d="M 68 36 L 80 36 Q 92 36 92 50 Q 92 64 80 64 L 68 64"/>
+  </g>
+  <!-- Right brace -->
+  <path d="M 90 12 Q 106 12 106 28 L 106 44 Q 106 49 114 49 Q 106 49 106 54 L 106 70 Q 106 86 90 86"/>
+  <!-- Copper accent dots (top + bottom small) -->
+  <circle cx="60" cy="6" r="2" fill="#EA580C" stroke="none"/>
+  <circle cx="60" cy="94" r="2" fill="#EA580C" stroke="none"/>
+</svg>`;
+
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
 const HTMX_CDN = 'https://unpkg.com/htmx.org@1.9.12';
 const FONTS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap';
@@ -174,12 +255,11 @@ export function layout({ title, content, active = '' }) {
         </div>
       </div>
 
-      <!-- BDLABS badge -->
+      <!-- BDLABS badge (SVG inline, sin dependencia de PNG) -->
       <div class="flex items-center gap-2 text-xs text-ink-muted">
         <span class="hidden sm:inline">Powered by</span>
-        <a href="#" class="font-semibold text-ink-soft hover:text-copper-600 transition-colors flex items-center gap-2">
-          <img src="/assets/bdlabs.png" alt="BDLABS" class="h-6 w-auto"
-            onerror="this.outerHTML='<span class=\\'w-5 h-5 rounded bg-gradient-to-br from-brand-700 to-copper-600 flex items-center justify-center text-white text-[10px] font-bold\\'>B</span><span>BDLABS</span>'">
+        <a href="#" class="hover:opacity-80 transition-opacity flex items-center" title="BD LABS">
+          ${BDLABS_LOGO_SVG}
         </a>
       </div>
     </div>
@@ -210,7 +290,7 @@ export function layout({ title, content, active = '' }) {
       </div>
       <div class="flex items-center gap-2">
         <span>Valiz Sync · Designed & built by</span>
-        <span class="font-semibold text-ink-soft">BDLABS</span>
+        <span class="font-bold text-ink-soft tracking-tight">BD<span class="text-copper-600 font-semibold tracking-widest ml-0.5">LABS</span></span>
       </div>
     </div>
   </footer>
