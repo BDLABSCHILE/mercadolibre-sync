@@ -44,7 +44,9 @@ router.get('/', async (req, res) => {
     }
     const opts = {};
     if (req.query.scope) opts.scope = req.query.scope;
-    if (req.query.key) opts.key = req.query.key;
+    // OJO: NO usar req.query.key como filtro — choca con ?key= del auth.
+    // Para filtrar por valor de key, usar ?filterKey=...
+    if (req.query.filterKey) opts.key = req.query.filterKey;
     if (req.query.platform) opts.platform = req.query.platform;
     opts.activeOnly = req.query.active !== '0';
     const items = await repo.listAll(opts);
