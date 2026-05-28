@@ -136,8 +136,8 @@ export function layout({ title, content, active = '' }) {
     <div class="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between gap-6">
       <!-- Brand: Valiz logo + title -->
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 flex items-center justify-center shadow-brand overflow-hidden">
-          <img src="/assets/valiz.png" alt="Valiz" class="w-full h-full object-contain p-1 filter brightness-0 invert"
+        <div class="w-11 h-11 rounded-xl bg-neutral-900 flex items-center justify-center shadow-lg overflow-hidden ring-1 ring-neutral-800">
+          <img src="/assets/valiz.png" alt="Valiz" class="w-full h-full object-contain p-1.5"
             onerror="this.outerHTML='<span class=\\'text-white font-bold text-lg\\'>V</span>'">
         </div>
         <div>
@@ -179,9 +179,9 @@ export function layout({ title, content, active = '' }) {
       <!-- BDLABS badge -->
       <div class="flex items-center gap-2 text-xs text-ink-muted">
         <span class="hidden sm:inline">Powered by</span>
-        <a href="#" class="font-semibold text-ink-soft hover:text-copper-600 transition-colors flex items-center gap-1.5">
-          <span class="w-5 h-5 rounded bg-gradient-to-br from-brand-700 to-copper-600 flex items-center justify-center text-white text-[10px] font-bold">B</span>
-          BDLABS
+        <a href="#" class="font-semibold text-ink-soft hover:text-copper-600 transition-colors flex items-center gap-2">
+          <img src="/assets/bdlabs.png" alt="BDLABS" class="h-6 w-auto"
+            onerror="this.outerHTML='<span class=\\'w-5 h-5 rounded bg-gradient-to-br from-brand-700 to-copper-600 flex items-center justify-center text-white text-[10px] font-bold\\'>B</span><span>BDLABS</span>'">
         </a>
       </div>
     </div>
