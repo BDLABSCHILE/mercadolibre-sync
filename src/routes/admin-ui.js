@@ -11,6 +11,7 @@ import * as skuMappingRepo from '../db/repositories/sku-mapping.js';
 import * as platformState from '../db/repositories/platform-state.js';
 import * as priceOverrideRepo from '../db/repositories/price-overrides.js';
 import * as overrideCache from '../services/override-cache.js';
+import * as skuCache from '../services/sku-cache.js';
 import { priceForMarketplace } from '../services/price.js';
 import { effectiveTargetForSku, syncAllPricesFromShopify } from '../services/price-sync.js';
 import { reconcileStock } from '../services/reconciler.js';
@@ -159,10 +160,20 @@ router.get('/skus/:sku/edit', async (req, res, next) => {
     const mlEff = m.mlItemId ? await effectiveTargetForSku(sku, shopifyPrice, 'mercadolibre') : { target: null, override: null };
     const fbEff = m.falabellaSellerSku ? await effectiveTargetForSku(sku, shopifyPrice, 'falabella') : { target: null, override: null };
 
+    // Contar hermanas en el item ML (importante: ML obliga a precio común
+    // entre variants del mismo item). Si hay >1, un override scope=sku solo
+    // surte efecto en Falabella.
+    let mlSiblingsCount = 0;
+    if (m.mlItemId) {
+      const siblings = await skuCache.getByMlItem(m.mlItemId);
+      mlSiblingsCount = siblings.length;
+    }
+
     res.type('html').send(views.skuEditModal({
       sku, family, shopifyPrice, productTitle, targetBase,
       targetMl: mlEff.target, mlOverride: mlEff.override,
       targetFb: fbEff.target, fbOverride: fbEff.override,
+      mlSiblingsCount,
       syncStartedFor: req._syncStartedFor || null,
     }));
   } catch (err) { next(err); }

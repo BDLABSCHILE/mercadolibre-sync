@@ -143,11 +143,24 @@ function overrideTooltip(o) {
 /**
  * Modal de edición de overrides para un SKU específico.
  */
-export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBase, mlOverride, fbOverride, targetMl, targetFb, syncStartedFor }) {
+export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBase, mlOverride, fbOverride, targetMl, targetFb, mlSiblingsCount = 0, syncStartedFor }) {
   const banner = syncStartedFor
     ? `<div style="background:#d1fadf;color:#027a48;padding:0.7rem 1rem;border-radius:6px;margin-bottom:1rem;">
          ✅ Override creado. Sync de precio iniciado para <strong>${esc(syncStartedFor)}</strong>.
          En ~30 seg los precios en ML/Falabella están actualizados (revisá logs de Render para detalle).
+       </div>`
+    : '';
+
+  // Warning: si el SKU tiene hermanas en ML, override scope=sku solo afecta
+  // Falabella; ML obliga a precio común y va a tomar el max entre variantes.
+  const mlSiblingsWarning = mlSiblingsCount > 1
+    ? `<div style="background:#fef0c7;color:#b54708;padding:0.7rem 1rem;border-radius:6px;margin:1rem 0;font-size:0.85rem;">
+         ⚠️ <strong>Este SKU comparte item ML con ${mlSiblingsCount - 1} hermana(s).</strong>
+         ML obliga a que todas las variantes del mismo item tengan el mismo precio.
+         <ul style="margin:0.4rem 0 0 1rem;">
+           <li><strong>Override <em>SKU</em></strong>: solo afecta Falabella. En ML las ${mlSiblingsCount} variantes se publican al precio más alto entre ellas.</li>
+           <li><strong>Override <em>familia ${esc(family || '')}</em></strong>: afecta a las ${mlSiblingsCount} variantes en ML y Falabella. Lo más natural.</li>
+         </ul>
        </div>`
     : '';
   return `
@@ -173,6 +186,7 @@ export function skuEditModal({ sku, family, shopifyPrice, productTitle, targetBa
       ` : ''}
 
       <h4>Crear nuevo override</h4>
+      ${mlSiblingsWarning}
       <form hx-post="/admin/ui/overrides/create" hx-target="#override-dialog" hx-swap="innerHTML">
         <input type="hidden" name="returnSku" value="${esc(sku)}">
 
