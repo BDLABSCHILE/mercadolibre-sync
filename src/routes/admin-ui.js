@@ -75,6 +75,8 @@ async function loadSkuRows(clients, filters = {}) {
       targetFb: fbEff.target,
       fbOverride: fbEff.override,
       fbSynced: fbState?.price ?? null,
+      linkedMl: !!m.mlItemId,
+      linkedFb: !!m.falabellaSellerSku,
     });
   }
 
@@ -84,7 +86,7 @@ async function loadSkuRows(clients, filters = {}) {
   const hasOverride = filters.hasOverride;
   const hasDrift = filters.hasDrift;
 
-  return rows.filter((r) => {
+  const filtered = rows.filter((r) => {
     if (search) {
       const haystack = `${r.sku} ${r.productTitle || ''}`.toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -99,6 +101,17 @@ async function loadSkuRows(clients, filters = {}) {
     }
     return true;
   });
+
+  // Orden: linkados primero (ML+FB > sólo uno > ninguno), luego alfabético por SKU.
+  // Esto pone arriba los SKUs que efectivamente están sincronizando.
+  const linkCount = (r) => (r.linkedMl ? 1 : 0) + (r.linkedFb ? 1 : 0);
+  filtered.sort((a, b) => {
+    const diff = linkCount(b) - linkCount(a);
+    if (diff !== 0) return diff;
+    return a.sku.localeCompare(b.sku, 'es', { sensitivity: 'base' });
+  });
+
+  return filtered;
 }
 
 /**
