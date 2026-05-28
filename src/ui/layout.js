@@ -151,8 +151,9 @@ export function layout({ title, content, active = '' }) {
         <span class="text-[10px] uppercase tracking-wider text-ink-muted font-semibold mr-3">Connected</span>
         <div class="flex items-center gap-2">
           <div class="relative group">
-            <div class="w-8 h-8 rounded-lg bg-white border border-line flex items-center justify-center shadow-soft hover:shadow-card transition-all">
-              <span class="text-[10px] font-bold text-emerald-600">SH</span>
+            <div class="w-8 h-8 rounded-lg bg-white border border-line flex items-center justify-center shadow-soft hover:shadow-card transition-all overflow-hidden">
+              <img src="/assets/shopify.png" alt="Shopify" class="w-6 h-6 object-contain"
+                onerror="this.outerHTML='<span class=\\'text-[10px] font-bold text-emerald-600\\'>SH</span>'">
             </div>
             <span class="connection-dot absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500"></span>
           </div>
