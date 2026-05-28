@@ -259,7 +259,7 @@ export function layout({ title, content, active = '' }) {
       <div class="flex items-center gap-2 text-xs text-ink-muted">
         <span class="hidden sm:inline">Powered by</span>
         <a href="#" class="hover:opacity-80 transition-opacity flex items-center" title="BD LABS">
-          <img src="/assets/bdlabs-negro.png" alt="BD LABS" class="h-10 w-auto"
+          <img src="/assets/bdlabs-negro.png" alt="BD LABS" class="h-14 w-auto"
             onerror="this.outerHTML='<span class=\\'font-bold text-ink-soft tracking-tight\\'>BD<span class=\\'text-copper-600 font-semibold tracking-widest ml-0.5\\'>LABS</span></span>'">
         </a>
       </div>
@@ -292,7 +292,7 @@ export function layout({ title, content, active = '' }) {
       <div class="flex items-center gap-3">
         <span>Valiz Sync · Designed & built by</span>
         <a href="#" class="hover:opacity-80 transition-opacity flex items-center" title="BD LABS">
-          <img src="/assets/bdlabs-negro.png" alt="BD LABS" class="h-12 w-auto"
+          <img src="/assets/bdlabs-negro.png" alt="BD LABS" class="h-16 w-auto"
             onerror="this.outerHTML='<span class=\\'font-bold text-ink-soft tracking-tight\\'>BD<span class=\\'text-copper-600 font-semibold tracking-widest ml-0.5\\'>LABS</span></span>'">
         </a>
       </div>
