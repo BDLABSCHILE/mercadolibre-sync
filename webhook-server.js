@@ -596,6 +596,7 @@ async function processMercadoLibreOrder(order, orderId, options = {}) {
     const { item, quantity } = orderItem;
     const variation_id = orderItem.variation_id ?? item?.variation_id ?? null;
     const itemId = item?.id;
+    const sellerSku = item?.seller_sku ?? null;
     const itemKey = `item:${itemId}:${variation_id || 'NA'}`;
     const baseRes = { itemId, variationId: variation_id };
 
@@ -607,7 +608,7 @@ async function processMercadoLibreOrder(order, orderId, options = {}) {
         continue;
       }
 
-      const resolved = await skuCache.resolveFromMlOrderItem(itemId, variation_id);
+      const resolved = await skuCache.resolveFromMlOrderItem(itemId, variation_id, sellerSku);
       if (resolved?.ambiguous) {
         logger.warn(
           { orderId, itemId, candidates: resolved.candidates },
@@ -627,14 +628,14 @@ async function processMercadoLibreOrder(order, orderId, options = {}) {
 
       const sku = resolved?.sku;
       if (!sku) {
-        logger.warn({ orderId, itemId, variation_id }, 'SKU no encontrado en mapping');
+        logger.warn({ orderId, itemId, variation_id, sellerSku }, 'SKU no encontrado en mapping');
         itemsFailed++;
         results.push({ ...baseRes, sku: null, status: 'sku_not_found' });
         if (!dryRun) {
           await marketplaceOrdersRepo.recordItem({
             platform, orderId, itemKey, sku: null, quantity,
             status: 'sku_not_found',
-            error: `no mapping for itemId=${itemId}, variation_id=${variation_id}`,
+            error: `no mapping for itemId=${itemId}, variation_id=${variation_id}, seller_sku=${sellerSku}`,
           });
         }
         continue;

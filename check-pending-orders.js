@@ -65,6 +65,7 @@ async function processOrder(orderId, shopify, meli) {
     const item = oi.item;
     const itemId = item?.id;
     const variationId = oi.variation_id ?? item?.variation_id ?? null;
+    const sellerSku = item?.seller_sku ?? null;
     const quantity = oi.quantity || 1;
     const itemKey = `item:${itemId}:${variationId || 'NA'}`;
 
@@ -74,7 +75,7 @@ async function processOrder(orderId, shopify, meli) {
     }
 
     try {
-      const resolved = await skuCache.resolveFromMlOrderItem(itemId, variationId);
+      const resolved = await skuCache.resolveFromMlOrderItem(itemId, variationId, sellerSku);
       if (resolved?.ambiguous) {
         itemsFailed++;
         await marketplaceOrders.recordItem({
@@ -89,7 +90,7 @@ async function processOrder(orderId, shopify, meli) {
         itemsFailed++;
         await marketplaceOrders.recordItem({
           platform: PLATFORM, orderId, itemKey, sku: null, quantity, status: 'sku_not_found',
-          error: `no mapping for itemId=${itemId}, variation_id=${variationId}`,
+          error: `no mapping for itemId=${itemId}, variation_id=${variationId}, seller_sku=${sellerSku}`,
         });
         continue;
       }
