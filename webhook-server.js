@@ -447,7 +447,6 @@ app.get('/', (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Valiz Sync · Powered by BDLABS</title>
-  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
   <link rel="icon" type="image/png" href="/assets/bdlabs-negro.png">
   <link rel="apple-touch-icon" href="/assets/bdlabs-negro.png">
   <meta name="description" content="Powered by BDLABS">
@@ -468,9 +467,7 @@ app.get('/', (req, res) => {
       display:flex;align-items:center;justify-content:center;color:#0F172A;padding:24px}
     .card{background:#fff;border:1px solid #E2E8F0;border-radius:24px;padding:48px 40px;max-width:420px;width:100%;
       text-align:center;box-shadow:0 10px 30px rgba(15,23,42,.08)}
-    .mark{width:64px;height:64px;border-radius:16px;background:#1E3A8A;display:inline-flex;align-items:center;
-      justify-content:center;font-weight:800;font-size:30px;letter-spacing:-2px;margin-bottom:20px}
-    .mark .b{color:#fff}.mark .d{color:#F97316}
+    .logo{height:72px;width:auto;margin-bottom:20px}
     h1{font-size:26px;font-weight:800;letter-spacing:-.5px}
     h1 .accent{color:#2563EB}
     p.sub{color:#64748B;font-size:14px;margin-top:6px}
@@ -486,7 +483,7 @@ app.get('/', (req, res) => {
 </head>
 <body>
   <div class="card">
-    <div class="mark"><span class="b">B</span><span class="d">D</span></div>
+    <img class="logo" src="/assets/bdlabs-negro.png" alt="BD LABS">
     <h1>Valiz <span class="accent">Sync</span></h1>
     <p class="sub">Stock &amp; price sync · 3 canales</p>
     <a class="btn" href="/admin/ui">Entrar al panel →</a>

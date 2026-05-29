@@ -22,6 +22,46 @@ const REFRESHED_ITEMS_FILE = process.env.MELI_CACHE_DIR
   ? path.join(process.env.MELI_CACHE_DIR, '.meli-refreshed-items.json')
   : path.join(__dirname, '.meli-refreshed-items.json');
 
+/**
+ * Lee el valor de un atributo de ML soportando los dos formatos que conviven:
+ *  - viejo: { value_name: 'X' } / { value_id: 'X' }
+ *  - nuevo: { values: [{ name: 'X', id: '...' }] }  (el de los user-products)
+ * @param {object|null|undefined} attr
+ * @returns {string|null}
+ */
+function readMlAttrValue(attr) {
+  if (!attr) return null;
+  if (attr.value_name != null && String(attr.value_name).trim() !== '') {
+    return String(attr.value_name).trim();
+  }
+  if (Array.isArray(attr.values) && attr.values.length > 0) {
+    const v = attr.values[0];
+    if (v?.name != null && String(v.name).trim() !== '') return String(v.name).trim();
+    if (v?.id != null && String(v.id).trim() !== '') return String(v.id).trim();
+  }
+  if (attr.value_id != null && String(attr.value_id).trim() !== '') {
+    return String(attr.value_id).trim();
+  }
+  return null;
+}
+
+/**
+ * Extrae el SELLER_SKU de una lista de atributos (attributes o attribute_combinations),
+ * soportando ambos formatos de valor.
+ * @param {Array|null|undefined} attrs
+ * @returns {string|null}
+ */
+function skuFromAttrs(attrs) {
+  if (!Array.isArray(attrs)) return null;
+  const attr = attrs.find(
+    (a) =>
+      a?.id === 'SELLER_SKU' ||
+      a?.id === 'SKU' ||
+      a?.name?.toLowerCase?.().includes('sku')
+  );
+  return readMlAttrValue(attr);
+}
+
 class MercadoLibreAPI {
   constructor() {
     this.appId = process.env.MELI_APP_ID;
@@ -48,6 +88,10 @@ class MercadoLibreAPI {
     
     // Cache in-memory de items refrescados (fallback si falla la persistencia)
     this.refreshedItemsCache = new Set();
+
+    // Cache in-memory de SKUs resueltos por user_product_id (modelo nuevo de
+    // inventario de ML). Cachea también null para no reintentar fallidos/no mapeados.
+    this.userProductCache = new Map();
     
     // Cargar items ya refrescados desde el archivo
     this.loadRefreshedItems();
@@ -1188,72 +1232,127 @@ class MercadoLibreAPI {
   }
 
   /**
+   * Resuelve el SELLER_SKU consultando /user-products/{id}. Usado en el modelo
+   * nuevo de inventario de ML, donde la variación no trae el SKU directo sino un
+   * user_product_id, y el SKU vive en attributes (id === 'SELLER_SKU').
+   * Cachea el resultado (incluso null) para no repetir llamadas.
+   * @param {string|number|null} userProductId
+   * @returns {Promise<string|null>}
+   */
+  async resolveSkuFromUserProduct(userProductId) {
+    if (!userProductId) return null;
+    const key = String(userProductId);
+    if (this.userProductCache.has(key)) {
+      return this.userProductCache.get(key);
+    }
+    let sku = null;
+    try {
+      const resp = await this.client.get(`/user-products/${key}`);
+      sku = skuFromAttrs(resp.data?.attributes);
+    } catch (error) {
+      console.warn(`    ⚠️  Error resolviendo user-product ${key}:`, error.response?.data || error.message);
+    }
+    this.userProductCache.set(key, sku);
+    return sku;
+  }
+
+  /**
+   * Resuelve el SKU de una variación probando, en orden: campos directos,
+   * attribute_combinations, attributes y finalmente user_product_id.
+   * @param {object} variation
+   * @returns {Promise<string|null>} SKU normalizado (trim) o null
+   */
+  async resolveVariationSku(variation) {
+    if (!variation) return null;
+    let sku =
+      variation.seller_custom_field ||
+      variation.sku ||
+      variation.seller_sku ||
+      skuFromAttrs(variation.attribute_combinations) ||
+      skuFromAttrs(variation.attributes);
+
+    if (!sku && variation.user_product_id) {
+      sku = await this.resolveSkuFromUserProduct(variation.user_product_id);
+    }
+
+    const normalized = sku != null ? String(sku).trim() : '';
+    return normalized !== '' ? normalized : null;
+  }
+
+  /**
+   * Resuelve el SKU de un item sin variaciones probando, en orden: campos
+   * directos, attributes y finalmente user_product_id.
+   * @param {object} item
+   * @returns {Promise<string|null>} SKU normalizado (trim) o null
+   */
+  async resolveItemSku(item) {
+    if (!item) return null;
+    let sku = item.seller_sku || item.sku || skuFromAttrs(item.attributes);
+
+    if (!sku && item.user_product_id) {
+      sku = await this.resolveSkuFromUserProduct(item.user_product_id);
+    }
+
+    const normalized = sku != null ? String(sku).trim() : '';
+    return normalized !== '' ? normalized : null;
+  }
+
+  /**
+   * Devuelve TODOS los IDs de items activos del usuario paginando con
+   * search_type=scan + scroll_id (el default limit:50 sin paginar dejaba la
+   * mayoría de los items afuera).
+   * @returns {Promise<string[]>}
+   */
+  async getAllActiveItemIds() {
+    const ids = [];
+    let scrollId = null;
+    let pages = 0;
+
+    while (true) {
+      const params = { search_type: 'scan', status: 'active', limit: 100 };
+      if (scrollId) params.scroll_id = scrollId;
+
+      const response = await this.client.get(`/users/${MELI_USER_ID}/items/search`, { params });
+      const results = response.data.results || [];
+      scrollId = response.data.scroll_id || null;
+
+      if (results.length === 0) break;
+      ids.push(...results);
+
+      pages++;
+      if (!scrollId || pages > 500) break; // tope de seguridad
+    }
+
+    return ids;
+  }
+
+  /**
    * Obtiene todos los items activos del usuario con sus SKUs
    * @returns {Promise<Map>} Map con SKU como clave y {itemId, variationId} como valor
    */
   async getAllItemsWithSKU() {
     try {
-      const response = await this.client.get(`/users/${MELI_USER_ID}/items/search`, {
-        params: {
-          status: 'active',
-          limit: 50,
-        },
-      });
-
-      const itemIds = response.data.results || [];
+      const itemIds = await this.getAllActiveItemIds();
       const skuItemMap = new Map();
-      
+
       console.log(`📦 Procesando ${itemIds.length} items de MercadoLibre...`);
 
-      for (let idx = 0; idx < itemIds.length; idx++) {
-        const itemId = itemIds[idx];
+      for (const itemId of itemIds) {
         try {
           const itemResponse = await this.client.get(`/items/${itemId}`);
           let item = itemResponse.data;
-          
+
           // Refrescar el item si es necesario (one-time, automático, con persistencia)
           item = await this.refreshItemIfNeeded(itemId, item);
-          
-          // Buscar SKUs en variaciones - probar múltiples campos posibles
-          let skusFoundInItem = 0;
+
           if (item.variations && item.variations.length > 0) {
+            let skusFoundInItem = 0;
             for (const variation of item.variations) {
-              // Buscar SKU en múltiples campos posibles
-              let sku = variation.seller_custom_field || 
-                       variation.sku || 
-                       variation.seller_sku;
-              
-              // Si no está en los campos directos, buscar en attribute_combinations
-              if (!sku && variation.attribute_combinations) {
-                const skuAttr = variation.attribute_combinations.find(attr => 
-                  attr.id === 'SELLER_SKU' || 
-                  attr.id === 'SKU' ||
-                  attr.name?.toLowerCase().includes('sku') ||
-                  attr.value_name?.toLowerCase().includes('sku')
-                );
-                if (skuAttr) {
-                  sku = skuAttr.value_name || skuAttr.value_id;
-                }
-              }
-              
-              // También buscar en attributes si existe
-              if (!sku && variation.attributes) {
-                const skuAttr = variation.attributes.find(attr => 
-                  attr.id === 'SELLER_SKU' || 
-                  attr.id === 'SKU' ||
-                  attr.name?.toLowerCase().includes('sku')
-                );
-                if (skuAttr) {
-                  sku = skuAttr.value_name || skuAttr.value_id;
-                }
-              }
-              
-              if (sku && sku.toString().trim() !== '') {
-                // Normalizar SKU (uppercase, sin espacios) para evitar duplicados
-                const normalizedSKU = sku.toString().trim().toUpperCase();
-                skuItemMap.set(normalizedSKU, {
+              const sku = await this.resolveVariationSku(variation);
+              if (sku) {
+                skuItemMap.set(sku.toUpperCase(), {
                   itemId,
-                  variationId: variation.id
+                  variationId: variation.id,
                 });
                 skusFoundInItem++;
               }
@@ -1262,13 +1361,12 @@ class MercadoLibreAPI {
               console.log(`  ✓ Item ${itemId}: ${skusFoundInItem} SKUs encontrados`);
             }
           } else {
-            // Fallback: si no tiene variaciones, usar SKU del item principal
-            const sku = item.seller_sku || item.sku;
-            if (sku && sku.toString().trim() !== '') {
-              const normalizedSKU = sku.toString().trim().toUpperCase();
-              skuItemMap.set(normalizedSKU, {
+            // Sin variaciones: usar SKU del item principal
+            const sku = await this.resolveItemSku(item);
+            if (sku) {
+              skuItemMap.set(sku.toUpperCase(), {
                 itemId,
-                variationId: null
+                variationId: null,
               });
               console.log(`  ✓ Item ${itemId}: 1 SKU encontrado (item principal)`);
             }
@@ -1279,7 +1377,7 @@ class MercadoLibreAPI {
           continue;
         }
       }
-      
+
       console.log(`\n✅ Total de SKUs encontrados: ${skuItemMap.size}`);
 
       return skuItemMap;
