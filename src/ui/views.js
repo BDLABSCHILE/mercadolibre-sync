@@ -12,10 +12,7 @@ export function skusTable(rows, filters = {}) {
     total: rows.length,
     withMlOverride: rows.filter((r) => r.mlOverride).length,
     withFbOverride: rows.filter((r) => r.fbOverride).length,
-    drift: rows.filter(
-      (r) => (r.targetMl != null && r.mlSynced != null && r.targetMl !== r.mlSynced)
-        || (r.targetFb != null && r.fbSynced != null && r.targetFb !== r.fbSynced),
-    ).length,
+    drift: rows.filter((r) => r.outOfSync).length,
   };
 
   const familyOptions = [...new Set(rows.map((r) => r.family).filter(Boolean))].sort();
@@ -53,11 +50,11 @@ export function skusTable(rows, filters = {}) {
         sublabel: 'Reglas activas',
       })}
       ${statCard({
-        label: 'Drift detectado',
+        label: 'Desincronizados',
         value: stats.drift,
         icon: ICON.alertTriangle,
         accent: stats.drift > 0 ? 'copper' : 'slate',
-        sublabel: stats.drift > 0 ? 'Requiere atención' : 'Todo sincronizado',
+        sublabel: stats.drift > 0 ? 'Precio o stock · revisar' : 'Todo sincronizado',
       })}
     </div>
 
@@ -74,7 +71,7 @@ export function skusTable(rows, filters = {}) {
         </div>
         ${selectFilter('family', filters.family, [['', 'Todas las familias'], ...familyOptions.map((f) => [f, f])])}
         ${selectFilter('hasOverride', filters.hasOverride, [['', 'Ajuste: cualquiera'], ['yes', 'Con ajuste'], ['no', 'Sin ajuste']])}
-        ${selectFilter('hasDrift', filters.hasDrift, [['', 'Drift: cualquiera'], ['yes', 'Solo con drift']])}
+        ${selectFilter('hasDrift', filters.hasDrift, [['', 'Sync: todos'], ['yes', 'Solo desincronizados'], ['price', 'Desync de precio'], ['stock', 'Desync de stock']])}
       </form>
       <button type="button"
               hx-get="/admin/ui/skus" hx-include="#skus-filter-form" hx-vals='{"liveStock":"1"}'

@@ -129,6 +129,18 @@ async function loadSkuRows(clients, filters = {}) {
     const fbStock = !m.falabellaSellerSku ? null
       : (liveStock ? (live.fbBySku.has(m.falabellaSellerSku) ? live.fbBySku.get(m.falabellaSellerSku) : null) : (fbState?.stock ?? null));
 
+    // Desincronización CONFIRMADA: el canal tiene un valor distinto al que debería.
+    // (No cuenta "sin dato" como desincronizado, para no marcar falsos positivos.)
+    const mlPriceState = mlState?.price ?? null;
+    const fbPriceState = fbState?.price ?? null;
+    const driftPriceMl = !!m.mlItemId && mlPriceState != null && mlEff.target != null && mlPriceState !== mlEff.target;
+    const driftPriceFb = !!m.falabellaSellerSku && fbPriceState != null && fbEff.target != null && fbPriceState !== fbEff.target;
+    const driftStockMl = !!m.mlItemId && mlStock != null && expectedMlStock != null && mlStock !== expectedMlStock;
+    const driftStockFb = !!m.falabellaSellerSku && fbStock != null && expectedFbStock != null && fbStock !== expectedFbStock;
+    const driftPrice = driftPriceMl || driftPriceFb;
+    const driftStock = driftStockMl || driftStockFb;
+    const outOfSync = driftPrice || driftStock;
+
     rows.push({
       sku: m.sku,
       family,
@@ -150,6 +162,10 @@ async function loadSkuRows(clients, filters = {}) {
       mlStock,
       fbStock,
       stockIsLive: liveStock,
+      // ---- estado de sincronización ----
+      driftPrice,
+      driftStock,
+      outOfSync,
     });
   }
 
@@ -167,11 +183,10 @@ async function loadSkuRows(clients, filters = {}) {
     if (family && r.family !== family) return false;
     if (hasOverride === 'yes' && !(r.mlOverride || r.fbOverride)) return false;
     if (hasOverride === 'no' && (r.mlOverride || r.fbOverride)) return false;
-    if (hasDrift === 'yes') {
-      const ml = r.targetMl != null && r.mlSynced != null && r.targetMl !== r.mlSynced;
-      const fb = r.targetFb != null && r.fbSynced != null && r.targetFb !== r.fbSynced;
-      if (!ml && !fb) return false;
-    }
+    // Filtro de sincronización: 'yes' = precio o stock; 'price' = solo precio; 'stock' = solo stock.
+    if (hasDrift === 'yes' && !r.outOfSync) return false;
+    if (hasDrift === 'price' && !r.driftPrice) return false;
+    if (hasDrift === 'stock' && !r.driftStock) return false;
     return true;
   });
 
