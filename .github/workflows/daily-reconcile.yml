@@ -1,0 +1,33 @@
+name: Reconciliación diaria de stock
+
+# Dispara una reconciliación de stock (Shopify = fuente de verdad → ML/Falabella)
+# una vez al día.
+#
+# Por qué un Action externo y no RECONCILE_INTERVAL_MIN:
+#   En el free tier de Render el servicio se duerme tras ~15 min sin tráfico, y el
+#   cron interno (setInterval) muere con el proceso. Por eso un disparador externo
+#   es la forma confiable de reconciliar a diario: este job despierta el servicio
+#   y llama a POST /admin/reconcile-stock, que responde 202 y corre en background.
+#
+# Requisito: agregar el secret SYNC_ALL_SECRET en
+#   GitHub → repo → Settings → Secrets and variables → Actions → New repository secret
+#   (mismo valor que la env var SYNC_ALL_SECRET de Render).
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # 09:00 UTC ≈ 05:00 Chile (horario de baja actividad)
+  workflow_dispatch: {}    # permite ejecutarlo a mano desde la pestaña "Actions"
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar reconcile-stock
+        run: |
+          curl --fail --silent --show-error \
+               --max-time 120 --retry 3 --retry-delay 30 --retry-all-errors \
+               -X POST "https://mercadolibre-sync.onrender.com/admin/reconcile-stock" \
+               -H "X-Admin-Key: ${{ secrets.SYNC_ALL_SECRET }}" \
+               -H "Content-Type: application/json" \
+               -d '{}'
+          echo "Reconciliación disparada (corre en background en el servidor; ver logs en Render)."
