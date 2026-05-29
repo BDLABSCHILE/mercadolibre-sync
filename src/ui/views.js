@@ -62,23 +62,34 @@ export function skusTable(rows, filters = {}) {
     </div>
 
     <!-- Toolbar -->
-    <form class="bg-white rounded-xl border border-line p-3 mb-4 flex flex-wrap items-center gap-2 shadow-soft"
-          hx-get="/admin/ui/skus" hx-target="#skus-table-wrap" hx-swap="innerHTML"
-          hx-trigger="change from:select, keyup changed delay:300ms from:input">
-      <div class="relative flex-1 min-w-[220px]">
-        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute">${ICON.search}</span>
-        <input type="search" name="search" placeholder="Buscar SKU o nombre de producto..."
-               value="${esc(filters.search || '')}"
-               class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-line rounded-lg text-sm placeholder:text-ink-mute focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:bg-white transition-all">
-      </div>
-      ${selectFilter('family', filters.family, [['', 'Todas las familias'], ...familyOptions.map((f) => [f, f])])}
-      ${selectFilter('hasOverride', filters.hasOverride, [['', 'Ajuste: cualquiera'], ['yes', 'Con ajuste'], ['no', 'Sin ajuste']])}
-      ${selectFilter('hasDrift', filters.hasDrift, [['', 'Drift: cualquiera'], ['yes', 'Solo con drift']])}
-    </form>
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+      <form id="skus-filter-form" class="bg-white rounded-xl border border-line p-3 flex flex-wrap items-center gap-2 shadow-soft flex-1"
+            hx-get="/admin/ui/skus" hx-target="#skus-table-wrap" hx-swap="innerHTML"
+            hx-trigger="change from:select, keyup changed delay:300ms from:input">
+        <div class="relative flex-1 min-w-[220px]">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute">${ICON.search}</span>
+          <input type="search" name="search" placeholder="Buscar SKU o nombre de producto..."
+                 value="${esc(filters.search || '')}"
+                 class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-line rounded-lg text-sm placeholder:text-ink-mute focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:bg-white transition-all">
+        </div>
+        ${selectFilter('family', filters.family, [['', 'Todas las familias'], ...familyOptions.map((f) => [f, f])])}
+        ${selectFilter('hasOverride', filters.hasOverride, [['', 'Ajuste: cualquiera'], ['yes', 'Con ajuste'], ['no', 'Sin ajuste']])}
+        ${selectFilter('hasDrift', filters.hasDrift, [['', 'Drift: cualquiera'], ['yes', 'Solo con drift']])}
+      </form>
+      <button type="button"
+              hx-get="/admin/ui/skus" hx-include="#skus-filter-form" hx-vals='{"liveStock":"1"}'
+              hx-target="#skus-table-wrap" hx-swap="innerHTML" hx-disabled-elt="this"
+              class="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl shadow-brand transition-all disabled:opacity-60"
+              title="Trae el stock real de MercadoLibre y Falabella ahora (puede tardar unos segundos)">
+        <span class="htmx-indicator-hide">${ICON.refresh}</span>
+        <span>Stock en vivo</span>
+        <span class="htmx-indicator text-xs">·••</span>
+      </button>
+    </div>
 
     <!-- Table -->
     <div id="skus-table-wrap">
-      ${skusTableInner(rows)}
+      ${skusTableInner(rows, filters)}
     </div>
 
     <dialog id="override-dialog" class="rounded-2xl shadow-lift border border-line p-0 max-w-3xl w-full backdrop:bg-ink/40"></dialog>
@@ -123,7 +134,7 @@ function selectFilter(name, current, options) {
   `;
 }
 
-export function skusTableInner(rows) {
+export function skusTableInner(rows, filters = {}) {
   if (rows.length === 0) {
     return `
       <div class="bg-white rounded-xl border border-line p-16 text-center shadow-soft">
@@ -132,8 +143,17 @@ export function skusTableInner(rows) {
       </div>
     `;
   }
+  const stockBanner = filters.liveStock
+    ? `<div class="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-[12px] text-emerald-800 flex items-center gap-2">
+         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 connection-dot"></span>
+         <strong class="font-semibold">Stock en vivo</strong> — traído directo de MercadoLibre y Falabella recién. El precio muestra el target; el stock muestra el real de cada canal.
+       </div>`
+    : `<div class="px-4 py-2 bg-slate-50 border-b border-line text-[12px] text-ink-muted flex items-center gap-2">
+         <span>Stock de ML/Falabella = último sincronizado (de la base). Usá <strong class="text-ink-soft">"Stock en vivo"</strong> para traer el real ahora.</span>
+       </div>`;
   return `
     <div class="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+      ${stockBanner}
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-slate-50/80 border-b border-line">
@@ -141,10 +161,10 @@ export function skusTableInner(rows) {
               <th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">SKU</th>
               <th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Producto</th>
               <th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Familia</th>
-              <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Shopify</th>
+              <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Shopify<span class="block text-[9px] font-normal normal-case tracking-normal text-ink-mute">precio · stock</span></th>
               <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Target base</th>
-              <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">MercadoLibre</th>
-              <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Falabella</th>
+              <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">MercadoLibre<span class="block text-[9px] font-normal normal-case tracking-normal text-ink-mute">precio · stock</span></th>
+              <th class="text-right px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Falabella<span class="block text-[9px] font-normal normal-case tracking-normal text-ink-mute">precio · stock</span></th>
               <th class="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Ajustes</th>
               <th class="px-4 py-3"></th>
             </tr>
@@ -166,7 +186,12 @@ function skuRow(r) {
       <td class="px-4 py-3">
         ${r.family ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-ink-muted text-xs font-medium">${esc(r.family)}</span>` : ''}
       </td>
-      <td class="px-4 py-3 text-right font-mono text-[13px] font-semibold text-ink">${fmtCLP(r.shopifyPrice)}</td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex flex-col items-end gap-0.5">
+          <span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(r.shopifyPrice)}</span>
+          ${stockChip(r.shopifyStock, { tone: 'shopify' })}
+        </div>
+      </td>
       <td class="px-4 py-3 text-right font-mono text-xs text-ink-muted">${fmtCLP(r.targetBase)}</td>
       <td class="px-4 py-3 text-right">${platformCell(r, 'ml')}</td>
       <td class="px-4 py-3 text-right">${platformCell(r, 'fb')}</td>
@@ -184,21 +209,59 @@ function skuRow(r) {
   `;
 }
 
+// Icono caja pequeño para stock (inline)
+const STOCK_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>`;
+
+// Chip de stock simple (Shopify): caja + número. Rojo si 0 o menos.
+function stockChip(value) {
+  if (value == null) return `<span class="inline-flex items-center gap-1 text-[11px] text-ink-mute">${STOCK_ICON}<span>—</span></span>`;
+  const color = value <= 0 ? 'text-copper-600' : 'text-ink-muted';
+  return `<span class="inline-flex items-center gap-1 text-[11px] ${color} font-medium" title="Stock Shopify">${STOCK_ICON}<span>${value} u</span></span>`;
+}
+
+// Chip de stock de canal (ML/FB): muestra stock real vs esperado.
+function channelStockChip(expected, actual, isLive) {
+  if (actual == null) {
+    const exp = expected == null ? '—' : `${expected}`;
+    const tag = isLive ? 's/dato' : 'no sync';
+    return `<span class="inline-flex items-center gap-1 text-[11px] text-ink-mute" title="Esperado ${exp} · sin dato actual">${STOCK_ICON}<span>esp ${exp}</span><span class="px-1 py-0.5 rounded bg-slate-100 text-ink-mute text-[9px]">${tag}</span></span>`;
+  }
+  const matches = expected != null && actual === expected;
+  const tone = actual <= 0 ? 'text-copper-600' : (matches ? 'text-ink-muted' : 'text-copper-700');
+  let badge = '';
+  if (expected != null && actual !== expected) {
+    badge = `<span class="px-1 py-0.5 rounded bg-copper-50 text-copper-700 text-[9px] font-semibold" title="Esperado ${expected}">≠${expected}</span>`;
+  } else if (matches) {
+    badge = `<span class="inline-flex items-center px-1 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[9px] font-semibold">${ICON.check}</span>`;
+  }
+  return `<span class="inline-flex items-center gap-1 text-[11px] ${tone} font-medium" title="Stock canal: ${actual}${expected != null ? ' · esperado: ' + expected : ''}">${STOCK_ICON}<span>${actual} u</span>${badge}</span>`;
+}
+
 function platformCell(r, kind) {
   const target = kind === 'ml' ? r.targetMl : r.targetFb;
   const synced = kind === 'ml' ? r.mlSynced : r.fbSynced;
   const label = kind === 'ml' ? 'ML' : 'FB';
+  const expectedStock = kind === 'ml' ? r.expectedMlStock : r.expectedFbStock;
+  const actualStock = kind === 'ml' ? r.mlStock : r.fbStock;
 
   if (target == null) {
     return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-ink-mute text-xs">${ICON.unlink}<span>sin link</span></span>`;
   }
+
+  // Fila de precio (target + badge de estado de sincronización)
+  let priceRow;
   if (synced == null) {
-    return `<span class="inline-flex items-center justify-end gap-1.5"><span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(target)}</span><span class="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-ink-mute text-[10px] font-medium">no sync</span></span>`;
+    priceRow = `<span class="inline-flex items-center justify-end gap-1.5"><span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(target)}</span><span class="inline-flex items-center px-1.5 py-0.5 rounded bg-slate-100 text-ink-mute text-[10px] font-medium">no sync</span></span>`;
+  } else if (synced === target) {
+    priceRow = `<span class="inline-flex items-center justify-end gap-1.5"><span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(target)}</span><span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-semibold">${ICON.check}</span></span>`;
+  } else {
+    priceRow = `<span class="inline-flex items-center justify-end gap-1.5"><span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(target)}</span><span class="inline-flex items-center px-1.5 py-0.5 rounded bg-copper-50 text-copper-700 text-[10px] font-semibold" title="${label} actual: ${fmtCLP(synced)}">drift</span></span>`;
   }
-  if (synced === target) {
-    return `<span class="inline-flex items-center justify-end gap-1.5"><span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(target)}</span><span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-semibold">${ICON.check}</span></span>`;
-  }
-  return `<span class="inline-flex items-center justify-end gap-1.5"><span class="font-mono text-[13px] font-semibold text-ink">${fmtCLP(target)}</span><span class="inline-flex items-center px-1.5 py-0.5 rounded bg-copper-50 text-copper-700 text-[10px] font-semibold" title="${label} actual: ${fmtCLP(synced)}">drift</span></span>`;
+
+  // Fila de stock (real del canal vs esperado)
+  const stockRow = channelStockChip(expectedStock, actualStock, r.stockIsLive);
+
+  return `<div class="flex flex-col items-end gap-1">${priceRow}${stockRow}</div>`;
 }
 
 function overrideBadges(r) {

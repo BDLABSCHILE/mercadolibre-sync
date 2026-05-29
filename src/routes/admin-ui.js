@@ -16,7 +16,11 @@ import { priceForMarketplace } from '../services/price.js';
 import { effectiveTargetForSku, syncAllPricesFromShopify } from '../services/price-sync.js';
 import { reconcileStock } from '../services/reconciler.js';
 import { familyForSku, pickOverride } from '../services/price-override.js';
+import { config } from '../config.js';
 import { logger } from '../logger.js';
+
+const ML_OFFSET = config.STOCK_OFFSET ?? 1;
+const FB_OFFSET = config.STOCK_OFFSET_FALABELLA ?? config.STOCK_OFFSET ?? 1;
 
 const router = express.Router();
 router.use(express.urlencoded({ extended: true }));
@@ -28,15 +32,64 @@ function getClients(req) {
 }
 
 /**
+ * Trae stock REAL (en vivo) de ML y Falabella. Mismo patrón que el reconciliador:
+ *  - ML: 1 GET por ml_item_id (deduplicado → ~13 llamadas para todo el catálogo).
+ *  - Falabella: getAllProducts paginado (1-2 llamadas).
+ * Devuelve { mlBySku: Map<sku,stock>, fbBySku: Map<sellerSku,stock> }.
+ * On-demand (solo cuando el usuario pide "actualizar en vivo").
+ */
+async function loadLiveChannelStock(clients, mappings) {
+  const mlBySku = new Map();
+  const fbBySku = new Map();
+
+  // ML: 1 GET por item, mapeando variación → SKU.
+  const itemIds = [...new Set(mappings.filter((m) => m.mlItemId).map((m) => m.mlItemId))];
+  for (const itemId of itemIds) {
+    try {
+      const resp = await clients.meli.client.get(`/items/${itemId}`);
+      const item = resp.data;
+      if (item.variations && item.variations.length > 0) {
+        for (const v of item.variations) {
+          const m = mappings.find((x) => String(x.mlVariationId) === String(v.id));
+          if (m) mlBySku.set(m.sku, Number.isFinite(v.available_quantity) ? v.available_quantity : 0);
+        }
+      } else {
+        const m = mappings.find((x) => x.mlItemId === itemId && !x.mlVariationId);
+        if (m) mlBySku.set(m.sku, Number.isFinite(item.available_quantity) ? item.available_quantity : 0);
+      }
+    } catch (err) {
+      logger.warn({ itemId, err: err.message }, 'live stock: error leyendo item ML');
+    }
+  }
+
+  // Falabella: catálogo completo paginado.
+  if (clients.falabella) {
+    try {
+      const fbProducts = await clients.falabella.getAllProducts();
+      for (const [sellerSku, info] of fbProducts) {
+        if (info.stock != null) fbBySku.set(sellerSku, info.stock);
+      }
+    } catch (err) {
+      logger.warn({ err: err.message }, 'live stock: error cargando Falabella');
+    }
+  }
+
+  return { mlBySku, fbBySku };
+}
+
+/**
  * Carga el conjunto de filas para la tabla principal. Hace 1 llamada a Shopify
  * (paginada) + lectura completa de mappings + platform_state + overrides.
+ * Si filters.liveStock es true, además trae stock real de ML y Falabella.
  */
 async function loadSkuRows(clients, filters = {}) {
   const mappings = await skuMappingRepo.listAll({ activeOnly: true });
+  const liveStock = Boolean(filters.liveStock);
 
-  // Mapa SKU → shopifyPrice (1 llamada paginada)
+  // Mapa SKU → { price, stock } de Shopify (1 llamada paginada; el stock es gratis)
   const products = await clients.shopify.getAllProducts();
   const shopifyMap = new Map();
+  const shopifyStockMap = new Map();
   const titleMap = new Map();
   for (const p of products) {
     for (const v of p.variants || []) {
@@ -44,12 +97,16 @@ async function loadSkuRows(clients, filters = {}) {
       if (!sku) continue;
       const price = Number(v.price);
       shopifyMap.set(sku, Number.isFinite(price) ? price : null);
+      shopifyStockMap.set(sku, Number.isFinite(v.inventory_quantity) ? v.inventory_quantity : null);
       titleMap.set(sku, p.title);
     }
   }
 
   // Cargar overrides activos en cache una vez para todo el barrido
   await overrideCache.invalidate(); // forzar fresh para datos consistentes
+
+  // Stock en vivo de los marketplaces (solo si lo pidieron explícitamente).
+  const live = liveStock ? await loadLiveChannelStock(clients, mappings) : { mlBySku: new Map(), fbBySku: new Map() };
 
   const rows = [];
   for (const m of mappings) {
@@ -62,6 +119,15 @@ async function loadSkuRows(clients, filters = {}) {
     const fbEff = m.falabellaSellerSku ? await effectiveTargetForSku(m.sku, shopifyPrice, 'falabella') : { target: null, override: null };
     const mlState = await platformState.get(m.sku, 'mercadolibre');
     const fbState = await platformState.get(m.sku, 'falabella');
+
+    // Stock: Shopify (fuente), esperado por canal (shopify - offset), y actual (live o último sincronizado)
+    const shopifyStock = shopifyStockMap.get(m.sku) ?? null;
+    const expectedMlStock = (m.mlItemId && shopifyStock != null) ? Math.max(0, shopifyStock - ML_OFFSET) : null;
+    const expectedFbStock = (m.falabellaSellerSku && shopifyStock != null) ? Math.max(0, shopifyStock - FB_OFFSET) : null;
+    const mlStock = !m.mlItemId ? null
+      : (liveStock ? (live.mlBySku.has(m.sku) ? live.mlBySku.get(m.sku) : null) : (mlState?.stock ?? null));
+    const fbStock = !m.falabellaSellerSku ? null
+      : (liveStock ? (live.fbBySku.has(m.falabellaSellerSku) ? live.fbBySku.get(m.falabellaSellerSku) : null) : (fbState?.stock ?? null));
 
     rows.push({
       sku: m.sku,
@@ -77,6 +143,13 @@ async function loadSkuRows(clients, filters = {}) {
       fbSynced: fbState?.price ?? null,
       linkedMl: !!m.mlItemId,
       linkedFb: !!m.falabellaSellerSku,
+      // ---- stock ----
+      shopifyStock,
+      expectedMlStock,
+      expectedFbStock,
+      mlStock,
+      fbStock,
+      stockIsLive: liveStock,
     });
   }
 
@@ -124,6 +197,7 @@ router.get('/', async (req, res, next) => {
       family: req.query.family,
       hasOverride: req.query.hasOverride,
       hasDrift: req.query.hasDrift,
+      liveStock: req.query.liveStock === '1' || req.query.liveStock === 'true',
     };
     const rows = await loadSkuRows(getClients(req), filters);
     const content = views.skusTable(rows, filters);
@@ -141,9 +215,10 @@ router.get('/skus', async (req, res, next) => {
       family: req.query.family,
       hasOverride: req.query.hasOverride,
       hasDrift: req.query.hasDrift,
+      liveStock: req.query.liveStock === '1' || req.query.liveStock === 'true',
     };
     const rows = await loadSkuRows(getClients(req), filters);
-    res.type('html').send(views.skusTableInner(rows));
+    res.type('html').send(views.skusTableInner(rows, filters));
   } catch (err) { next(err); }
 });
 
