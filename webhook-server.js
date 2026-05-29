@@ -434,6 +434,68 @@ app.use('/assets', express.static(path.join(__dirname, 'public'), { maxAge: '7d'
 app.locals.clients = { shopify, meli, falabella };
 app.use('/admin/ui', adminUiRouter);
 
+// Landing pública (raíz). SIN auth: sirve para el preview al compartir el link
+// (Open Graph → WhatsApp muestra "Powered by BDLABS" + logo) y como puerta de
+// entrada. El dashboard real sigue protegido en /admin/ui.
+app.get('/', (req, res) => {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const base = `${proto}://${req.get('host')}`;
+  const ogImage = `${base}/assets/bdlabs-negro.png`;
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Valiz Sync · Powered by BDLABS</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+  <link rel="icon" type="image/png" href="/assets/bdlabs-negro.png">
+  <link rel="apple-touch-icon" href="/assets/bdlabs-negro.png">
+  <meta name="description" content="Powered by BDLABS">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Valiz Sync">
+  <meta property="og:title" content="Valiz Sync">
+  <meta property="og:description" content="Powered by BDLABS">
+  <meta property="og:image" content="${ogImage}">
+  <meta property="og:url" content="${base}/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Valiz Sync">
+  <meta name="twitter:description" content="Powered by BDLABS">
+  <meta name="twitter:image" content="${ogImage}">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      background:linear-gradient(160deg,#F8FAFC 0%,#EFF6FF 100%);min-height:100vh;
+      display:flex;align-items:center;justify-content:center;color:#0F172A;padding:24px}
+    .card{background:#fff;border:1px solid #E2E8F0;border-radius:24px;padding:48px 40px;max-width:420px;width:100%;
+      text-align:center;box-shadow:0 10px 30px rgba(15,23,42,.08)}
+    .mark{width:64px;height:64px;border-radius:16px;background:#1E3A8A;display:inline-flex;align-items:center;
+      justify-content:center;font-weight:800;font-size:30px;letter-spacing:-2px;margin-bottom:20px}
+    .mark .b{color:#fff}.mark .d{color:#F97316}
+    h1{font-size:26px;font-weight:800;letter-spacing:-.5px}
+    h1 .accent{color:#2563EB}
+    p.sub{color:#64748B;font-size:14px;margin-top:6px}
+    a.btn{display:inline-block;margin-top:28px;background:#2563EB;color:#fff;text-decoration:none;
+      font-weight:600;font-size:15px;padding:13px 28px;border-radius:14px;box-shadow:0 4px 14px rgba(37,99,235,.25);
+      transition:background .15s}
+    a.btn:hover{background:#1D4ED8}
+    .powered{margin-top:32px;padding-top:20px;border-top:1px solid #E2E8F0;color:#94A3B8;font-size:12px;
+      display:flex;align-items:center;justify-content:center;gap:8px}
+    .powered b{color:#334155;font-weight:700;letter-spacing:-.3px}
+    .powered b .labs{color:#EA580C;font-weight:600;letter-spacing:1.5px;margin-left:2px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark"><span class="b">B</span><span class="d">D</span></div>
+    <h1>Valiz <span class="accent">Sync</span></h1>
+    <p class="sub">Stock &amp; price sync · 3 canales</p>
+    <a class="btn" href="/admin/ui">Entrar al panel →</a>
+    <div class="powered">Powered by <b>BD<span class="labs">LABS</span></b></div>
+  </div>
+</body>
+</html>`);
+});
+
 /**
  * POST /admin/sync-price
  *   Body: { sku, shopifyPrice, force? }
