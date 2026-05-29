@@ -72,6 +72,7 @@ export function skusTable(rows, filters = {}) {
         ${selectFilter('family', filters.family, [['', 'Todas las familias'], ...familyOptions.map((f) => [f, f])])}
         ${selectFilter('hasOverride', filters.hasOverride, [['', 'Ajuste: cualquiera'], ['yes', 'Con ajuste'], ['no', 'Sin ajuste']])}
         ${selectFilter('hasDrift', filters.hasDrift, [['', 'Sync: todos'], ['yes', 'Solo desincronizados'], ['price', 'Desync de precio'], ['stock', 'Desync de stock']])}
+        ${selectFilter('linkStatus', filters.linkStatus, [['', 'Link: todos'], ['incomplete', 'Falta algún canal'], ['noml', 'Sin MercadoLibre'], ['nofb', 'Sin Falabella']])}
       </form>
       <button type="button"
               hx-get="/admin/ui/skus" hx-include="#skus-filter-form" hx-vals='{"liveStock":"1"}'

@@ -174,6 +174,7 @@ async function loadSkuRows(clients, filters = {}) {
   const family = (filters.family || '').trim();
   const hasOverride = filters.hasOverride;
   const hasDrift = filters.hasDrift;
+  const linkStatus = filters.linkStatus;
 
   const filtered = rows.filter((r) => {
     if (search) {
@@ -187,6 +188,10 @@ async function loadSkuRows(clients, filters = {}) {
     if (hasDrift === 'yes' && !r.outOfSync) return false;
     if (hasDrift === 'price' && !r.driftPrice) return false;
     if (hasDrift === 'stock' && !r.driftStock) return false;
+    // Filtro de link: 'incomplete' = le falta algún canal; 'noml' / 'nofb' = sin ese canal.
+    if (linkStatus === 'incomplete' && r.linkedMl && r.linkedFb) return false;
+    if (linkStatus === 'noml' && r.linkedMl) return false;
+    if (linkStatus === 'nofb' && r.linkedFb) return false;
     return true;
   });
 
@@ -212,6 +217,7 @@ router.get('/', async (req, res, next) => {
       family: req.query.family,
       hasOverride: req.query.hasOverride,
       hasDrift: req.query.hasDrift,
+      linkStatus: req.query.linkStatus,
       liveStock: req.query.liveStock === '1' || req.query.liveStock === 'true',
     };
     const rows = await loadSkuRows(getClients(req), filters);
@@ -230,6 +236,7 @@ router.get('/skus', async (req, res, next) => {
       family: req.query.family,
       hasOverride: req.query.hasOverride,
       hasDrift: req.query.hasDrift,
+      linkStatus: req.query.linkStatus,
       liveStock: req.query.liveStock === '1' || req.query.liveStock === 'true',
     };
     const rows = await loadSkuRows(getClients(req), filters);
