@@ -62,17 +62,34 @@ export async function reconcileStock(clients, opts = {}) {
     : mappings.filter((m) => skuFilter.includes(m.sku.toUpperCase()));
   logger.info({ totalMappings: mappings.length, afterFilter: filteredMappings.length }, 'reconcile: mappings cargados');
 
-  // 2) Cargar stock Shopify
+  // 2) Cargar stock Shopify (autoritativo desde inventory_levels, no el variant.inventory_quantity
+  //    que tiene lag y haría reconciliar valores stale en un reconcile on-demand tras editar stock).
   const shopifyMap = new Map();
   try {
     const products = await clients.shopify.getAllProducts();
+    // Mapear sku -> inventory_item_id y juntar los ids para leer niveles reales en lote.
+    const skuToItemId = new Map();
+    const itemIds = [];
     for (const p of products) {
       for (const v of p.variants || []) {
         const sku = (v.sku || '').trim();
         if (!sku) continue;
-        const stock = Number.isFinite(v.inventory_quantity) ? v.inventory_quantity : 0;
-        shopifyMap.set(sku, stock);
+        if (v.inventory_item_id != null) {
+          skuToItemId.set(sku, String(v.inventory_item_id));
+          itemIds.push(v.inventory_item_id);
+        }
+        // Fallback inicial: variant.inventory_quantity (se reemplaza por el real más abajo si existe).
+        shopifyMap.set(sku, Number.isFinite(v.inventory_quantity) ? v.inventory_quantity : 0);
       }
+    }
+    let realLevels = new Map();
+    try {
+      realLevels = await clients.shopify.getInventoryLevelsByItemIds(itemIds);
+    } catch (errLvls) {
+      logger.warn({ err: errLvls.message }, 'reconcile: no se pudieron leer inventory_levels, uso variant.inventory_quantity');
+    }
+    for (const [sku, itemId] of skuToItemId) {
+      if (realLevels.has(itemId)) shopifyMap.set(sku, realLevels.get(itemId));
     }
   } catch (err) {
     logger.error({ err: err.message }, 'reconcile: error cargando Shopify');

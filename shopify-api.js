@@ -109,42 +109,32 @@ class ShopifyAPI {
             console.log(`   📋 inventory_item_id: ${variant.inventory_item_id}`);
             console.log(`   📦 variant.inventory_quantity: ${variant.inventory_quantity}`);
             
-            // Obtener el inventario real desde la API de inventario
+            // Leer el inventario REAL desde inventory_levels (autoritativo, sin lag).
+            // NOTA: no usar /inventory_items/{id}/locations.json (no existe en API 2024-01,
+            // daba 404 → caía al fallback con lag de variant.inventory_quantity).
+            // Tampoco usar `totalStock > 0 ? totalStock : variant.inventory_quantity`: si el
+            // stock real es 0, ese patrón devolvía el valor stale del variant → sobreventa.
             const inventoryItemId = variant.inventory_item_id;
             if (inventoryItemId) {
               try {
-                const inventoryResponse = await this.client.get(
-                  `/inventory_items/${inventoryItemId}.json`
+                const levelsResponse = await this.client.get(
+                  `/inventory_levels.json?inventory_item_ids=${inventoryItemId}`
                 );
-                const inventoryItem = inventoryResponse.data.inventory_item;
-                
-                // Obtener las ubicaciones de inventario
-                const locationsResponse = await this.client.get(
-                  `/inventory_items/${inventoryItemId}/locations.json`
-                );
-                
-                let totalStock = 0;
-                if (locationsResponse.data.locations) {
-                  for (const location of locationsResponse.data.locations) {
-                    const inventoryLevelResponse = await this.client.get(
-                      `/inventory_levels.json?inventory_item_ids=${inventoryItemId}&location_ids=${location.id}`
-                    );
-                    if (inventoryLevelResponse.data.inventory_levels?.length > 0) {
-                      totalStock += inventoryLevelResponse.data.inventory_levels[0].available || 0;
-                    }
-                  }
+                const levels = levelsResponse.data.inventory_levels || [];
+                if (levels.length === 0) {
+                  console.warn(`   ⚠️  Sin inventory_levels para ${inventoryItemId}, usando variant.inventory_quantity`);
+                  return variant.inventory_quantity || 0;
                 }
-                
-                const finalStock = totalStock > 0 ? totalStock : (variant.inventory_quantity || 0);
-                console.log(`   ✅ Stock total calculado: ${finalStock} (de ${locationsResponse.data.locations?.length || 0} ubicaciones)`);
-                return finalStock;
+                const totalStock = levels.reduce((sum, l) => sum + (l.available || 0), 0);
+                console.log(`   ✅ Stock real (inventory_levels): ${totalStock} (de ${levels.length} ubicación/es)`);
+                return totalStock;
               } catch (inventoryError) {
-                // Si falla obtener inventory_item, usar el stock del variant como fallback
-                console.warn(`   ⚠️  Error obteniendo inventory_item ${inventoryItemId}, usando variant.inventory_quantity:`, inventoryError.response?.data || inventoryError.message);
+                // Solo si la llamada falla de verdad, fallback al variant (con lag).
+                console.warn(`   ⚠️  Error leyendo inventory_levels de ${inventoryItemId}, usando variant.inventory_quantity:`, inventoryError.response?.data || inventoryError.message);
                 return variant.inventory_quantity || 0;
               }
             }
-            
+
             return variant.inventory_quantity || 0;
           }
         }
@@ -159,6 +149,30 @@ class ShopifyAPI {
       }
       return null;
     }
+  }
+
+  /**
+   * Lee el stock REAL (inventory_levels, autoritativo) para un conjunto de inventory_item_ids,
+   * en lotes de 50 (límite de la API). Devuelve Map(inventory_item_id(string) -> available sumado).
+   * Los ids que la API no devuelva quedan ausentes del Map (el caller decide el fallback).
+   * @param {Array<string|number>} inventoryItemIds
+   * @returns {Promise<Map<string, number>>}
+   */
+  async getInventoryLevelsByItemIds(inventoryItemIds) {
+    const out = new Map();
+    const ids = [...new Set((inventoryItemIds || []).filter((x) => x != null).map(String))];
+    const CHUNK = 50;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      const resp = await this.client.get(
+        `/inventory_levels.json?inventory_item_ids=${chunk.join(',')}&limit=250`,
+      );
+      for (const lvl of resp.data.inventory_levels || []) {
+        const key = String(lvl.inventory_item_id);
+        out.set(key, (out.get(key) || 0) + (lvl.available || 0));
+      }
+    }
+    return out;
   }
 
   /**
