@@ -356,12 +356,22 @@ export default class FalabellaAPI {
     const data = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
     if (!data) return [];
 
-    const items = data.OrderItems?.OrderItem ?? data.OrderItems ?? data.order_items ?? [];
+    // Falabella envuelve la respuesta en SuccessResponse.Body. Si no se desenvuelve,
+    // data.OrderItems queda undefined y la orden parece "sin items" → nunca descuenta stock.
+    if (data.ErrorResponse) {
+      const err = data.ErrorResponse.Head ?? data.ErrorResponse;
+      const code = err?.ErrorCode ?? err?.Code ?? 'unknown';
+      const msg = err?.ErrorMessage ?? err?.Message ?? JSON.stringify(data.ErrorResponse);
+      throw new Error(`Falabella GetOrderItems Error: ${code} - ${msg}`);
+    }
+    const body = data.SuccessResponse?.Body ?? data.Body ?? data;
+    const items = body.OrderItems?.OrderItem ?? body.OrderItems ?? body.order_items ?? [];
     const arr = Array.isArray(items) ? items : [items];
     const result = [];
     for (let i = 0; i < arr.length; i++) {
       const it = arr[i];
-      const sku = it.ShopSku ?? it.Sku ?? it.sku ?? it.seller_sku ?? '';
+      // Preferir el SKU del vendedor (Sku = "MA-C-CAR"), NO ShopSku (id numérico de Falabella).
+      const sku = it.Sku ?? it.sku ?? it.seller_sku ?? it.SellerSku ?? it.ShopSku ?? '';
       const qty = parseInt(it.Quantity ?? it.quantity ?? it.qty ?? '1', 10) || 1;
       const itemId = it.OrderItemId ?? it.order_item_id ?? `item-${i}`;
       if (sku && String(sku).trim()) result.push({ sku: String(sku).trim(), quantity: qty, orderItemId: itemId });

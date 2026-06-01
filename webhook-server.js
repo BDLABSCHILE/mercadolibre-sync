@@ -1138,6 +1138,16 @@ app.post('/webhooks/falabella/order', async (req, res) => {
       try {
         const result = await processFalabellaOrder(orderIdForProcess);
         logger.info({ orderId: orderIdForProcess, processed: result.items_processed, failed: result.items_failed }, 'orden Falabella procesada');
+        // Solo marcar processed si realmente se procesó algún item. Si la orden vino sin
+        // items procesados (parse vacío, getOrderItems falló, etc.) marcar failed para tener
+        // visibilidad y no enmascarar una venta no descontada como "ok".
+        const okItems = Number(result?.items_processed) || 0;
+        const failItems = Number(result?.items_failed) || 0;
+        if (result?.success === false || okItems === 0) {
+          await webhookEvents.markFailed(deliveryId, result?.error || `orden sin items procesados (ok=${okItems}, fail=${failItems})`);
+          logger.warn({ orderId: orderIdForProcess, result }, 'orden Falabella NO descontó stock (marcada failed)');
+          return res.status(200).json({ ok: false, order_id: orderIdForProcess, ...result });
+        }
         await webhookEvents.markProcessed(deliveryId);
         return res.status(200).json({ ok: true, order_id: orderIdForProcess, ...result });
       } finally {
