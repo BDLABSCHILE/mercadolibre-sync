@@ -1335,16 +1335,17 @@ app.get('/test-sync', async (req, res) => {
     const meliStock = calculateMeliStock(shopifyStock);
     console.log(`   🧮 Stock calculado para MercadoLibre: ${meliStock} (Shopify ${shopifyStock} - offset ${stockOffset})`);
 
-    // Buscar en MercadoLibre
+    // Buscar en MercadoLibre (mismo resolver que el flujo real: sku_mapping primero,
+    // scan en vivo solo como fallback). Antes usaba findItemBySKU directo → mentía para billeteras.
     console.log(`\n2️⃣ Buscando SKU ${sku} en MercadoLibre...`);
-    const result = await meli.findItemBySKU(sku, true); // true = debug mode
+    const result = await resolveMlTarget(sku, { skuCache, meli });
     if (!result) {
       console.log(`   ❌ SKU ${sku} no encontrado en MercadoLibre`);
       return res.status(404).json({ error: `SKU ${sku} no encontrado en MercadoLibre` });
     }
 
-    const { itemId, variationId } = result;
-    console.log(`   ✅ Item encontrado: itemId=${itemId}, variationId=${variationId}`);
+    const { itemId, variationId, via } = result;
+    console.log(`   ✅ Item encontrado: itemId=${itemId}, variationId=${variationId} (via ${via})`);
 
     // Obtener stock actual en MercadoLibre
     console.log(`\n3️⃣ Obteniendo stock actual en MercadoLibre...`);
@@ -1365,7 +1366,8 @@ app.get('/test-sync', async (req, res) => {
           meliStock,
           previousMeliStock: currentMeliStock,
           itemId,
-          variationId
+          variationId,
+          via
         });
       } else {
         console.log(`   ❌ Error al actualizar stock`);
@@ -1382,7 +1384,8 @@ app.get('/test-sync', async (req, res) => {
         meliStock,
         message: 'Stock ya está sincronizado',
         itemId,
-        variationId
+        variationId,
+        via
       });
     }
 
