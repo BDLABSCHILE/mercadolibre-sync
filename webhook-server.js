@@ -18,6 +18,7 @@ import * as locks from './src/db/repositories/sku-locks.js';
 import * as webhookEvents from './src/db/repositories/webhook-events.js';
 import { syncPriceForShopifyProduct, syncPriceForSku, syncAllPricesFromShopify } from './src/services/price-sync.js';
 import { reconcileStock } from './src/services/reconciler.js';
+import { resolveMlTarget } from './src/services/ml-resolve.js';
 import { adminAuth } from './src/middleware/admin-auth.js';
 import crypto from 'crypto';
 
@@ -110,14 +111,16 @@ async function syncSkuToMarketplacesFromShopify(sku, shopifyStock, { reason, ski
   // MercadoLibre
   try {
     const meliStock = calculateMeliStock(shopifyStock);
-    const result = await meli.findItemBySKU(safeSku);
+    // Resolver el item de ML por sku_mapping primero (fuente de verdad; cubre billeteras/
+    // catálogo cuyo SKU vive en el user_product). Fallback al scan en vivo solo si no hay mapeo.
+    const result = await resolveMlTarget(safeSku, { skuCache, meli });
     if (!result) {
       console.log(`   ⚠️  [sync:${reason || 'shopify'}] SKU ${safeSku}: no encontrado en MercadoLibre`);
       results.push({ marketplace: 'mercadolibre', ok: false, reason: 'not_found' });
     } else {
       const ok = await meli.updateStock(result.itemId, meliStock, result.variationId);
       if (ok) {
-        console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → MercadoLibre(${meliStock})`);
+        console.log(`   ✅ [sync:${reason || 'shopify'}] ${safeSku} → MercadoLibre(${meliStock}) [via ${result.via}]`);
         results.push({ marketplace: 'mercadolibre', ok: true, stock: meliStock });
       } else {
         console.log(`   ❌ [sync:${reason || 'shopify'}] ${safeSku}: error actualizando MercadoLibre`);
