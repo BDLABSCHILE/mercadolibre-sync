@@ -19,6 +19,10 @@ import * as webhookEvents from './src/db/repositories/webhook-events.js';
 import { syncPriceForShopifyProduct, syncPriceForSku, syncAllPricesFromShopify } from './src/services/price-sync.js';
 import { reconcileStock } from './src/services/reconciler.js';
 import { resolveMlTarget } from './src/services/ml-resolve.js';
+import * as backInStockRepo from './src/db/repositories/back-in-stock.js';
+import * as pulpo from './src/services/pulpo.js';
+import { handleSubscribe, notifyPendingForSku, sweepPendingOnBoot } from './src/services/back-in-stock.js';
+import { makeProductCache } from './src/services/shopify-product-cache.js';
 import { adminAuth } from './src/middleware/admin-auth.js';
 import crypto from 'crypto';
 
@@ -352,6 +356,13 @@ app.post('/webhook/inventory', shopifyRawParser, verifyShopifyHmac, async (req, 
     }
     console.log(`   ✅ Stock Shopify: ${shopifyStock}`);
 
+    // Back in stock: si este SKU tiene esperas pendientes y volvió el stock, avisar
+    // vía Pulpo. Fire-and-forget: jamás bloquea ni rompe la respuesta del webhook.
+    if (shopifyStock > 0) {
+      notifyPendingForSku(sku, shopifyStock, { repo: backInStockRepo, pulpo, logger }, { source: 'inventory_webhook' })
+        .catch((err) => logger.warn({ sku, err: err.message }, 'back-in-stock: error en aviso post-webhook'));
+    }
+
     console.log(`   🧮 MercadoLibre: ${calculateMeliStock(shopifyStock)} (offset ${stockOffset})`);
     if (falabella) {
       console.log(`   🧮 Falabella:    ${calculateFalabellaStock(shopifyStock)} (offset ${stockOffsetFalabella})`);
@@ -425,6 +436,102 @@ app.post('/webhooks/shopify/products/update', shopifyRawParser, verifyShopifyHma
 
 // ========== JSON para el resto de rutas (MercadoLibre, etc.) ==========
 app.use(express.json());
+
+// ========== BACK IN STOCK (público, lo llama el tema de valiz.cl) ==========
+// CORS restringido a la tienda. El Bearer de Pulpo nunca toca el storefront:
+// el tema postea acá y este server habla con Pulpo.
+const BIS_ALLOWED_ORIGINS = new Set(['https://www.valiz.cl', 'https://valiz.cl']);
+
+app.use('/api/back-in-stock', (req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && BIS_ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  return next();
+});
+
+// Rate limit simple en memoria: 10/min por IP + tope global 120/min.
+// OJO con X-Forwarded-For: el cliente puede mandar lo que quiera al INICIO de la
+// cadena; el proxy de Render APPENDEA la IP real AL FINAL → usamos el último hop.
+const bisRateBuckets = new Map();
+let bisGlobalBucket = [];
+function bisRateLimited(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '');
+  const lastHop = xff.split(',').pop()?.trim();
+  const ip = lastHop || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  // Tope global (independiente de IP): un atacante rotando headers no lo esquiva.
+  bisGlobalBucket = bisGlobalBucket.filter((t) => now - t < 60_000);
+  bisGlobalBucket.push(now);
+  if (bisGlobalBucket.length > 120) return true;
+
+  // Poda de buckets viejos (sin clear() total: eso reseteaba TODOS los contadores).
+  if (bisRateBuckets.size > 5000) {
+    for (const [k, arr] of bisRateBuckets) {
+      if (arr.length === 0 || now - arr[arr.length - 1] > 60_000) bisRateBuckets.delete(k);
+    }
+  }
+
+  const recent = (bisRateBuckets.get(ip) || []).filter((t) => now - t < 60_000);
+  recent.push(now);
+  bisRateBuckets.set(ip, recent);
+  return recent.length > 10;
+}
+
+// Cache de productos Shopify por SKU (valida SKU real + agotado, y resuelve
+// título/URL server-side — nunca se confía en texto del cliente para el correo).
+const bisProductCache = makeProductCache(shopify);
+
+/**
+ * POST /api/back-in-stock/subscribe
+ * Body: { sku, email, phone?, website? (honeypot) }
+ * Alta en la waitlist. Solo para productos SIN stock. El aviso sale cuando el
+ * stock Shopify del SKU vuelva a ser > 0.
+ */
+app.post('/api/back-in-stock/subscribe', async (req, res) => {
+  try {
+    if (bisRateLimited(req)) {
+      return res.status(429).json({ ok: false, error: 'Demasiadas solicitudes, intenta en un minuto' });
+    }
+    const out = await handleSubscribe(req.body || {}, {
+      getProduct: (sku) => bisProductCache.getBySku(sku),
+      repo: backInStockRepo,
+      pulpo,
+      logger,
+    });
+    return res.status(out.status).json(out.body);
+  } catch (err) {
+    logger.error({ err: err.message }, 'back-in-stock: error en subscribe');
+    return res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
+/** GET /admin/back-in-stock — estado de la waitlist (auth admin). */
+app.get('/admin/back-in-stock', adminAuth, async (req, res) => {
+  try {
+    const [s, recent] = await Promise.all([
+      backInStockRepo.stats(),
+      backInStockRepo.listRecent({ limit: Number(req.query.limit) || 100 }),
+    ]);
+    return res.json({
+      pulpoEnabled: pulpo.isEnabled(),
+      stats: s,
+      // "sent" = Pulpo aceptó el evento (202). La ENTREGA real exige que el flow
+      // "Back in stock" esté LIVE en Pulpo — 202 no lo garantiza (en borrador,
+      // Pulpo acepta el evento y no enrola a nadie, sin error).
+      hint: s.sent > 0 ? 'sent = evento aceptado por Pulpo; verifica que el flow Back in stock esté LIVE' : undefined,
+      recent,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // Endpoints administrativos (mapping SKU, etc.). Auth con SYNC_ALL_SECRET.
 app.use('/admin/skus', adminSkusRouter);
@@ -1487,6 +1594,32 @@ app.listen(PORT, async () => {
     },
     'servidor iniciado',
   );
+
+  // Migraciones pendientes al arrancar (idempotente; Render no tiene release
+  // phase). Si falla, el server sigue: el resto del sync no depende de tablas
+  // nuevas, y los queries del feature nuevo fallan contenidos en sus try/catch.
+  if (config.DATABASE_URL) {
+    import('./src/db/migrate-runner.js')
+      .then((m) => m.runPendingMigrations())
+      .catch((err) => logger.error({ err: err.message }, '⚠️ migraciones al boot fallaron — revisar'));
+  }
+
+  // Back in stock: barrido al arranque (diferido 45s para no competir con el
+  // catch-up de ML). En Render free el proceso despierta con cualquier tráfico,
+  // así que esto acota la latencia de avisos aunque el webhook de inventario
+  // no llegue (HMAC) y el reconcile sea diario. Consulta stock SOLO de los SKUs
+  // con esperas pendientes (barato; normalmente cero).
+  if (config.DATABASE_URL && pulpo.isEnabled()) {
+    setTimeout(() => {
+      sweepPendingOnBoot(
+        { repo: backInStockRepo, pulpo, logger },
+        (sku) => shopify.getStockBySKU(sku),
+        { source: 'boot' },
+      )
+        .then((r) => { if (r && (r.notified || r.recovered)) logger.info(r, 'back-in-stock boot: barrido'); })
+        .catch((err) => logger.warn({ err: err.message }, 'back-in-stock boot: error'));
+    }, 45_000);
+  }
 
   // Verificar órdenes pendientes al arrancar (catch-up de ML, una sola vez).
   import('./check-pending-orders.js')

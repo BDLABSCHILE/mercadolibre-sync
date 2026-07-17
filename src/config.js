@@ -70,6 +70,12 @@ const schema = z.object({
   // Cron del reconciliador. 0 = OFF (solo manual via endpoint). N>0 = cada N min.
   // Sugerido: 1440 (1 vez al día) para volumen bajo, 240 (cada 4h) para volumen medio.
   RECONCILE_INTERVAL_MIN: envNum(z.coerce.number().int().nonnegative().default(0)),
+
+  // Integración Pulpo (pulpo.valiz.cl) para avisos "back in stock". Sin la llave,
+  // la waitlist igual acumula suscriptores pero NO se envían avisos (fail-safe).
+  // La llave se crea en Pulpo → Configuración → Llaves API (scope acceso total).
+  PULPO_URL: envStr(z.string().url().default('https://pulpo.valiz.cl')),
+  PULPO_TRACK_API_KEY: envStr(z.string().min(1).optional()),
 });
 
 const parsed = schema.safeParse(process.env);

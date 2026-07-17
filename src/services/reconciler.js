@@ -21,6 +21,9 @@ import { logger } from '../logger.js';
 import * as skuMappingRepo from '../db/repositories/sku-mapping.js';
 import * as platformState from '../db/repositories/platform-state.js';
 import * as locks from '../db/repositories/sku-locks.js';
+import * as backInStockRepo from '../db/repositories/back-in-stock.js';
+import * as pulpo from './pulpo.js';
+import { notifyPendingFromStockMap } from './back-in-stock.js';
 import { query } from '../db/index.js';
 
 const ML_PLATFORM = 'mercadolibre';
@@ -256,6 +259,17 @@ export async function reconcileStock(clients, opts = {}) {
     if ((i + 1) % 25 === 0) {
       logger.info({ progress: `${i + 1}/${filteredMappings.length}` }, 'reconcile: progreso');
     }
+  }
+
+  // Back in stock: la reconciliación ya cargó el stock real de TODOS los SKUs de
+  // Shopify → barrido barato de esperas pendientes que repusieron. Es la red de
+  // seguridad mientras el webhook de inventario no llegue (o falle su HMAC).
+  if (!dryRun) {
+    summary.backInStock = await notifyPendingFromStockMap(
+      shopifyMap,
+      { repo: backInStockRepo, pulpo, logger },
+      { source: 'reconcile' },
+    );
   }
 
   summary.finishedAt = new Date().toISOString();
