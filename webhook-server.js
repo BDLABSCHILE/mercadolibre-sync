@@ -12,6 +12,7 @@ import { verifyShopifyHmac } from './src/middleware/verify-shopify-hmac.js';
 import adminSkusRouter from './src/routes/admin-skus.js';
 import adminPriceOverridesRouter from './src/routes/admin-price-overrides.js';
 import adminUiRouter from './src/routes/admin-ui.js';
+import adminApiRouter from './src/routes/admin-api.js';
 import * as skuCache from './src/services/sku-cache.js';
 import * as marketplaceOrdersRepo from './src/db/repositories/marketplace-orders.js';
 import * as locks from './src/db/repositories/sku-locks.js';
@@ -535,6 +536,7 @@ app.get('/admin/back-in-stock', adminAuth, async (req, res) => {
 
 // Endpoints administrativos (mapping SKU, etc.). Auth con SYNC_ALL_SECRET.
 app.use('/admin/skus', adminSkusRouter);
+app.use('/admin/api', adminApiRouter);
 app.use('/admin/price-overrides', adminPriceOverridesRouter);
 
 // Assets estáticos del dashboard (logos, etc.). Sin auth porque son imágenes.

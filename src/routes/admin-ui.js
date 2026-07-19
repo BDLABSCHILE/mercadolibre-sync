@@ -82,7 +82,7 @@ async function loadLiveChannelStock(clients, mappings) {
  * (paginada) + lectura completa de mappings + platform_state + overrides.
  * Si filters.liveStock es true, además trae stock real de ML y Falabella.
  */
-async function loadSkuRows(clients, filters = {}) {
+export async function loadSkuRows(clients, filters = {}) {
   const mappings = await skuMappingRepo.listAll({ activeOnly: true });
   const liveStock = Boolean(filters.liveStock);
 
