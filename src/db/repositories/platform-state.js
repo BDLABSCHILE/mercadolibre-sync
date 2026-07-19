@@ -30,6 +30,12 @@ export async function listForSku(sku) {
   return res.rows.map(rowToState);
 }
 
+/** TODOS los estados (para barridos: evita el N+1 de get() por SKU/canal). */
+export async function listAll() {
+  const res = await query(`SELECT ${COLS} FROM platform_state`);
+  return res.rows.map(rowToState);
+}
+
 /**
  * Upsert de stock + meta. No toca price.
  */

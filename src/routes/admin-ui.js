@@ -108,6 +108,13 @@ async function loadSkuRows(clients, filters = {}) {
   // Stock en vivo de los marketplaces (solo si lo pidieron explícitamente).
   const live = liveStock ? await loadLiveChannelStock(clients, mappings) : { mlBySku: new Map(), fbBySku: new Map() };
 
+  // Estado por SKU/canal (precio+stock último sincronizado) de UNA sola vez.
+  // Antes se leía con platformState.get() por cada SKU y canal → ~2×N queries
+  // secuenciales contra Neon (N+1). Ahora es 1 query + lookup en memoria.
+  const allStates = await platformState.listAll();
+  const stateMap = new Map();
+  for (const s of allStates) stateMap.set(`${s.sku}|${s.platform}`, s);
+
   const rows = [];
   for (const m of mappings) {
     const shopifyPrice = shopifyMap.get(m.sku);
@@ -117,8 +124,8 @@ async function loadSkuRows(clients, filters = {}) {
     const targetBase = priceForMarketplace(shopifyPrice);
     const mlEff = m.mlItemId ? await effectiveTargetForSku(m.sku, shopifyPrice, 'mercadolibre') : { target: null, override: null };
     const fbEff = m.falabellaSellerSku ? await effectiveTargetForSku(m.sku, shopifyPrice, 'falabella') : { target: null, override: null };
-    const mlState = await platformState.get(m.sku, 'mercadolibre');
-    const fbState = await platformState.get(m.sku, 'falabella');
+    const mlState = stateMap.get(`${m.sku}|mercadolibre`) ?? null;
+    const fbState = stateMap.get(`${m.sku}|falabella`) ?? null;
 
     // Stock: Shopify (fuente), esperado por canal (shopify - offset), y actual (live o último sincronizado)
     const shopifyStock = shopifyStockMap.get(m.sku) ?? null;
