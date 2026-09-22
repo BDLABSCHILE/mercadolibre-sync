@@ -174,6 +174,18 @@ export async function reconcileStock(clients, opts = {}) {
         summary.mlSkippedNoMapping++;
       } else if (actual === expected) {
         summary.mlConsistent++;
+        // El "ultimo estado conocido" solo se refrescaba cuando habia que
+        // corregir un drift. Si ML ya estaba bien (p.ej. porque una venta en
+        // el propio marketplace lo dejo consistente sin que nosotros
+        // escribieramos nada), platform_state se quedaba pegado en el ultimo
+        // valor corregido, a veces por meses, y el panel de comparacion
+        // (que en modo no-live lee de aqui) mostraba un drift que ya no
+        // existe. Se refresca tambien acá, fuera de dry_run, para que el
+        // panel se autocorrija en el proximo ciclo del cron sin tener que
+        // forzar una escritura al marketplace.
+        if (!dryRun) {
+          await platformState.setStock(sku, ML_PLATFORM, expected, 'reconciliation:confirmed');
+        }
       } else {
         if (dryRun) {
           if (summary.samples.length < 30) {
@@ -220,6 +232,14 @@ export async function reconcileStock(clients, opts = {}) {
         summary.fbSkippedNoMapping++;
       } else if (actual === expected) {
         summary.fbConsistent++;
+        // Mismo fix que en ML (ver comentario arriba): sin esto,
+        // platform_state.falabella quedaba desactualizado indefinidamente
+        // para cualquier SKU cuyo drift se resolviera solo (p.ej. una venta
+        // ocurrida directamente en Falabella), y el panel de comparacion
+        // mostraba un "desincronizado" que en la realidad ya no existia.
+        if (!dryRun) {
+          await platformState.setStock(sku, FB_PLATFORM, expected, 'reconciliation:confirmed');
+        }
       } else {
         if (dryRun) {
           if (summary.samples.length < 30) {
