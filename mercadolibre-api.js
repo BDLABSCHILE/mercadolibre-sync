@@ -4,10 +4,12 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { resolveSkuFromOrderItem } from './meli-sku-mapping.js';
+import * as oauthCredentialsRepo from './src/db/repositories/oauth-credentials.js';
 
 dotenv.config();
 
 const MELI_USER_ID = process.env.MELI_USER_ID;
+const OAUTH_PROVIDER = 'mercadolibre';
 
 if (!MELI_USER_ID) {
   throw new Error('MELI_USER_ID debe estar configurado en .env');
@@ -64,9 +66,12 @@ function skuFromAttrs(attrs) {
 
 class MercadoLibreAPI {
   constructor() {
+    this.startedAt = new Date();
     this.appId = process.env.MELI_APP_ID;
     this.clientSecret = process.env.MELI_CLIENT_SECRET;
     this.refreshToken = process.env.MELI_REFRESH_TOKEN;
+    this.dbInitialized = false;
+    this.dbInitPromise = null;
     
     // Access token en memoria (se obtiene/refresca automáticamente)
     this.accessToken = null;
@@ -104,6 +109,51 @@ class MercadoLibreAPI {
     if (initialToken) {
       this.accessToken = initialToken;
       this.updateClientHeaders();
+    }
+  }
+
+  /**
+   * Carga el refresh_token persistido si la DB ya tiene uno para MercadoLibre.
+   * Best-effort: cualquier problema de DB conserva el env.
+   */
+  async initFromDb() {
+    if (this.dbInitialized) return false;
+    if (this.dbInitPromise) return this.dbInitPromise;
+    if (!process.env.DATABASE_URL) {
+      this.dbInitialized = true;
+      return false;
+    }
+
+    this.dbInitPromise = (async () => {
+      try {
+        const credential = await oauthCredentialsRepo.get(OAUTH_PROVIDER);
+        const updatedAt = credential?.updatedAt ? new Date(credential.updatedAt) : null;
+        if (credential?.refreshToken && updatedAt && !Number.isNaN(updatedAt.getTime())) {
+          this.refreshToken = credential.refreshToken;
+          console.log('✅ Refresh token de MercadoLibre cargado desde DB');
+          this.dbInitialized = true;
+          return true;
+        }
+      } catch (error) {
+        console.warn('⚠️  No se pudo cargar refresh token de MercadoLibre desde DB:', error.message);
+        this.dbInitialized = false;
+        return false;
+      } finally {
+        this.dbInitPromise = null;
+      }
+      this.dbInitialized = true;
+      return false;
+    })();
+
+    return this.dbInitPromise;
+  }
+
+  async persistRefreshToken(refreshToken) {
+    if (!process.env.DATABASE_URL) return;
+    try {
+      await oauthCredentialsRepo.upsertRefreshToken(OAUTH_PROVIDER, refreshToken);
+    } catch (error) {
+      console.warn('⚠️  No se pudo persistir refresh token de MercadoLibre en DB:', error.message);
     }
   }
 
@@ -181,6 +231,8 @@ class MercadoLibreAPI {
    * Se usa en el interceptor de request para asegurar token antes de cada request
    */
   async ensureValidToken() {
+    await this.initFromDb();
+
     // Si ya hay un refresh en progreso, esperar a que termine
     if (this.isRefreshing) {
       return this.refreshPromise;
@@ -188,16 +240,7 @@ class MercadoLibreAPI {
 
     // Si no tenemos token, obtenerlo
     if (!this.accessToken) {
-      this.isRefreshing = true;
-      this.refreshPromise = this.refreshAccessToken();
-      
-      try {
-        const token = await this.refreshPromise;
-        return token;
-      } finally {
-        this.isRefreshing = false;
-        this.refreshPromise = null;
-      }
+      return this.refreshAccessToken();
     }
 
     return this.accessToken;
@@ -324,13 +367,20 @@ class MercadoLibreAPI {
    * Maneja múltiples llamadas concurrentes para evitar refreshes duplicados
    */
   async refreshAccessToken() {
-    if (!this.refreshToken || !this.clientSecret || !this.appId) {
-      throw new Error('No se puede refrescar el token: faltan REFRESH_TOKEN, CLIENT_SECRET o APP_ID');
-    }
-
     // Si ya hay un refresh en progreso, esperar a que termine
     if (this.isRefreshing && this.refreshPromise) {
       return this.refreshPromise;
+    }
+
+    await this.initFromDb();
+
+    // Si initFromDb dejó que otro refresh partiera antes, esperar ese.
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    if (!this.refreshToken || !this.clientSecret || !this.appId) {
+      throw new Error('No se puede refrescar el token: faltan REFRESH_TOKEN, CLIENT_SECRET o APP_ID');
     }
 
     // Iniciar refresh
@@ -351,6 +401,7 @@ class MercadoLibreAPI {
         // Actualizar refresh_token si viene uno nuevo
         if (response.data.refresh_token) {
           this.refreshToken = response.data.refresh_token;
+          await this.persistRefreshToken(response.data.refresh_token);
         }
 
         // Actualizar headers del cliente

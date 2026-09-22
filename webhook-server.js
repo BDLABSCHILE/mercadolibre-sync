@@ -1603,6 +1603,7 @@ app.listen(PORT, async () => {
   if (config.DATABASE_URL) {
     import('./src/db/migrate-runner.js')
       .then((m) => m.runPendingMigrations())
+      .then(() => meli.initFromDb())
       .catch((err) => logger.error({ err: err.message }, '⚠️ migraciones al boot fallaron — revisar'));
   }
 
